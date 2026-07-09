@@ -5,6 +5,21 @@ Dieses Skript ist als plattformunabhaengige Alternative zum bisherigen Bash-Skri
 gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 
+# Versionshistorie
+# -----------------------------------------------------------------------------
+# Version: 0.2.0
+# Build:   20260709-001
+# Changes:
+#   - Zielbranch pro Umgebung zwischen develop und master umschaltbar gemacht.
+#   - GitLab-Funktionen fuer Pull, Commit, Push und Remote/Local-Diff erweitert.
+#   - Aktive Umgebung und Terraform-Zielbranch in Header und Menues sichtbar gemacht.
+#
+# Version: 0.1.0
+# Build:   20260708-001
+# Changes:
+#   - Erste Python-Version der Terraform-Umgebungsverwaltung erstellt.
+#   - Grundkonfiguration, lokale Umgebungen und GitLab-Anbindung umgesetzt.
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +38,15 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
+SCRIPT_VERSION = "0.2.0"
+SCRIPT_BUILD = "20260709-001"
+SCRIPT_CHANGELOG = (
+    "Zielbranch pro Umgebung zwischen develop und master umschaltbar gemacht.",
+    "GitLab-Funktionen fuer Pull, Commit, Push und Remote/Local-Diff erweitert.",
+    "Aktive Umgebung und Terraform-Zielbranch in Header und Menues sichtbar gemacht.",
+)
+
+
 @dataclass
 class ApiResult:
     status_code: int
@@ -30,7 +54,8 @@ class ApiResult:
 
 
 class TerraformManager:
-    script_version = "0.2.0"
+    script_version = SCRIPT_VERSION
+    script_build = SCRIPT_BUILD
 
     def __init__(self, config_file: Optional[Path] = None) -> None:
         self.script_dir = Path(__file__).resolve().parent
@@ -227,7 +252,7 @@ class TerraformManager:
     def print_header(self) -> None:
         if sys.stdout.isatty():
             os.system("cls" if os.name == "nt" else "clear")
-        print(f"Terraform Umgebungsverwaltung - Version {self.script_version}")
+        print(f"Terraform Umgebungsverwaltung - Version {self.script_version} (Build {self.script_build})")
         print(f'Root: {self.config["ROOT_DIR"]}')
         print(f"Parameterdatei: {self.config_file}")
         terraform_branch_output = f'Terraform-Zielbranch: {self.config["TERRAFORM_TARGET_BRANCH"]}'
@@ -348,6 +373,33 @@ class TerraformManager:
     def ensure_curl_available(self) -> bool:
         # In Python nicht noetig, aber fuer kompatible Meldungen belassen.
         return True
+
+    def check_gitlab_required_packages(self) -> None:
+        self.print_header()
+        print("GitLab - benoetigte Pakete pruefen")
+        print()
+
+        required_commands = (
+            ("git", "Git-Operationen wie clone, pull, commit und push"),
+            ("ssh", "GitLab-Zugriff per SSH-Remote"),
+        )
+        missing = []
+
+        for command, description in required_commands:
+            path = shutil.which(command)
+            if path:
+                print(f"[OK]      {command}: {path}")
+            else:
+                print(f"[FEHLT]   {command}: {description}")
+                missing.append(command)
+
+        print()
+        if missing:
+            print("Fehlende Pakete installieren, bevor GitLab-Funktionen verwendet werden:")
+            print(f"  {', '.join(missing)}")
+        else:
+            print("Alle benoetigten Pakete fuer die GitLab-Kommunikation sind installiert.")
+        self.pause()
 
     def ensure_gitlab_authentication_configured(self) -> bool:
         if self.config["GIT_ACCESS_TOKEN"] or (
@@ -1363,6 +1415,7 @@ class TerraformManager:
             print("4) Push (local to remote)")
             print("5) Diff (remote / local)")
             print("6) Anbindung testen")
+            print("7) Benoetigte Pakete pruefen")
             print("0) Zurueck")
             print()
 
@@ -1379,6 +1432,8 @@ class TerraformManager:
                 self.show_git_diff_remote_local()
             elif choice == "6":
                 self.show_gitlab_test_menu()
+            elif choice == "7":
+                self.check_gitlab_required_packages()
             elif choice == "0":
                 return
             else:
@@ -1844,6 +1899,12 @@ class TerraformManager:
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Terraform Umgebungsverwaltung")
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {SCRIPT_VERSION} (Build {SCRIPT_BUILD})",
+    )
     parser.add_argument(
         "-c",
         "--config",
