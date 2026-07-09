@@ -1,4 +1,4 @@
-Terraform {
+terraform {
  required_providers {
       alteon = {
             source = "Radware/alteon"

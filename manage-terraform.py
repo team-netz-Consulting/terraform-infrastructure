@@ -7,6 +7,7 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 
 from __future__ import annotations
 
+import argparse
 import atexit
 import base64
 import json
@@ -31,9 +32,11 @@ class ApiResult:
 class TerraformManager:
     script_version = "0.2.0"
 
-    def __init__(self) -> None:
+    def __init__(self, config_file: Optional[Path] = None) -> None:
         self.script_dir = Path(__file__).resolve().parent
-        self.config_file = Path(os.environ.get("TERRAFORM_MANAGER_CONFIG", self.script_dir / "manage-terraform.conf"))
+        self.config_file = config_file or Path(
+            os.environ.get("TERRAFORM_MANAGER_CONFIG", self.script_dir / "manage-terraform.conf")
+        )
         self.askpass_script: Optional[Path] = None
         self.config: Dict[str, str] = {}
 
@@ -103,6 +106,45 @@ class TerraformManager:
             cfg["TERRAFORM_TARGET_BRANCH"] = "develop"
 
         self.config = cfg
+        self.validate_config()
+
+    def validate_config(self) -> None:
+        errors: List[str] = []
+
+        root_dir = Path(self.config["ROOT_DIR"]).expanduser()
+        template_dir = Path(self.config["TEMPLATE_DIR"]).expanduser()
+        environments_dir = Path(self.config["ENVIRONMENTS_DIR"]).expanduser()
+
+        if not root_dir.is_dir():
+            errors.append(f"ROOT_DIR ist kein gueltiges Verzeichnis: {root_dir}")
+        if not template_dir.is_dir():
+            errors.append(f"TEMPLATE_DIR ist kein gueltiges Verzeichnis: {template_dir}")
+
+        try:
+            environments_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            errors.append(f"ENVIRONMENTS_DIR kann nicht erstellt werden: {environments_dir} ({exc})")
+        else:
+            if not environments_dir.is_dir():
+                errors.append(f"ENVIRONMENTS_DIR ist kein gueltiges Verzeichnis: {environments_dir}")
+
+        for key in ("MASTER_BRANCH", "DEVELOP_BRANCH", "GIT_REMOTE_NAME", "GIT_GROUP_URL"):
+            if not self.config[key].strip():
+                errors.append(f"{key} darf nicht leer sein.")
+
+        if not parse.urlsplit(self.config["GIT_GROUP_URL"]).scheme:
+            errors.append(f"GIT_GROUP_URL ist keine gueltige URL: {self.config['GIT_GROUP_URL']}")
+
+        active_environment = self.config.get("ACTIVE_ENVIRONMENT", "").strip()
+        if active_environment and not self.validate_environment_name(active_environment):
+            errors.append(f"ACTIVE_ENVIRONMENT enthaelt ungueltige Zeichen: {active_environment}")
+
+        if errors:
+            print("Konfiguration ist ungueltig:")
+            for item in errors:
+                print(f"- {item}")
+            print(f"Bitte Einstellungen in {self.config_file} pruefen.")
+            raise SystemExit(1)
 
     @staticmethod
     def parse_config_file(path: Path) -> Dict[str, str]:
@@ -1800,8 +1842,20 @@ class TerraformManager:
 
         return datetime.now().strftime("%Y%m%d-%H%M%S")
 
-def main() -> int:
-    manager = TerraformManager()
+def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Terraform Umgebungsverwaltung")
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=Path,
+        help="Alternative Konfigurationsdatei verwenden",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = parse_args(argv)
+    manager = TerraformManager(args.config)
     manager.load_config()
     manager.show_menu()
     return 0
