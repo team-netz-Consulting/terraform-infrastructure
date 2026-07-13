@@ -70,6 +70,7 @@ class TerraformManager:
             os.environ.get("TERRAFORM_MANAGER_CONFIG", self.script_dir / "manage-terraform.conf")
         )
         self.askpass_script: Optional[Path] = None
+        self.alteon_credentials_set = False
         self.config: Dict[str, str] = {}
 
         atexit.register(self.cleanup_git_askpass)
@@ -1510,6 +1511,9 @@ class TerraformManager:
             self.pause()
             return
 
+        if not self.ensure_alteon_linuxenv_variables():
+            return
+
         env_path = self.ensure_active_environment_path()
         if env_path is None:
             self.pause()
@@ -1524,6 +1528,7 @@ class TerraformManager:
         result = subprocess.run(
             ["terraform", *terraform_args],
             cwd=str(env_path),
+            env=os.environ.copy(),
             text=True,
             capture_output=True,
         )
@@ -1547,7 +1552,11 @@ class TerraformManager:
         if not self.config_value_is_true(self.config.get("ALTEON_USE_LINUXENV", "false")):
             return True
 
-        if os.environ.get("TF_VAR_username") and os.environ.get("TF_VAR_password"):
+        if (
+            self.alteon_credentials_set
+            and os.environ.get("TF_VAR_alteon_username")
+            and os.environ.get("TF_VAR_alteon_password")
+        ):
             return True
 
         self.print_header()
@@ -1582,8 +1591,9 @@ class TerraformManager:
             self.config["ALTEON_USERNAME"] = username
             self.save_config()
 
-        os.environ["TF_VAR_username"] = username
-        os.environ["TF_VAR_password"] = password
+        os.environ["TF_VAR_alteon_username"] = username
+        os.environ["TF_VAR_alteon_password"] = password
+        self.alteon_credentials_set = True
         return True
 
     def show_terraform_menu(self) -> None:
