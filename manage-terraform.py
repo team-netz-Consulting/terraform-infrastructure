@@ -7,6 +7,11 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.2
+# Build:   20260713-002
+# Changes:
+#   - Versionshinweis fuer die aktualisierten Terraform-Templates erneuert.
+#
 # Version: 0.2.1
 # Build:   20260713-001
 # Changes:
@@ -46,11 +51,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.1"
-SCRIPT_BUILD = "20260713-001"
+SCRIPT_VERSION = "0.2.2"
+SCRIPT_BUILD = "20260713-002"
 SCRIPT_CHANGELOG = (
-    "Alteon-Anmeldedaten fuer Linux-Umgebungen optional vor Terraform-Befehlen abgefragt.",
-    "Konfigurationswerte ohne Anfuehrungszeichen und mit Kommentaren unterstuetzt.",
+    "Versionshinweis fuer die aktualisierten Terraform-Templates erneuert.",
 )
 
 
