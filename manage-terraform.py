@@ -7,6 +7,12 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.1
+# Build:   20260713-001
+# Changes:
+#   - Alteon-Anmeldedaten fuer Linux-Umgebungen optional vor Terraform-Befehlen abgefragt.
+#   - Konfigurationswerte ohne Anfuehrungszeichen und mit Kommentaren unterstuetzt.
+#
 # Version: 0.2.0
 # Build:   20260709-001
 # Changes:
@@ -20,11 +26,13 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 #   - Erste Python-Version der Terraform-Umgebungsverwaltung erstellt.
 #   - Grundkonfiguration, lokale Umgebungen und GitLab-Anbindung umgesetzt.
 
+
 from __future__ import annotations
 
 import argparse
 import atexit
 import base64
+import getpass
 import json
 import os
 import re
@@ -38,12 +46,11 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.0"
-SCRIPT_BUILD = "20260709-001"
+SCRIPT_VERSION = "0.2.1"
+SCRIPT_BUILD = "20260713-001"
 SCRIPT_CHANGELOG = (
-    "Zielbranch pro Umgebung zwischen develop und master umschaltbar gemacht.",
-    "GitLab-Funktionen fuer Pull, Commit, Push und Remote/Local-Diff erweitert.",
-    "Aktive Umgebung und Terraform-Zielbranch in Header und Menues sichtbar gemacht.",
+    "Alteon-Anmeldedaten fuer Linux-Umgebungen optional vor Terraform-Befehlen abgefragt.",
+    "Konfigurationswerte ohne Anfuehrungszeichen und mit Kommentaren unterstuetzt.",
 )
 
 
@@ -88,6 +95,8 @@ class TerraformManager:
             "GIT_TEST_PROJECT_PREFIX": "terraform-manager-test",
             "ACTIVE_ENVIRONMENT": "",
             "TERRAFORM_TARGET_BRANCH": "develop",
+            "ALTEON_USE_LINUXENV": "false",
+            "ALTEON_USERNAME": "",
         }
 
     def create_default_config(self) -> None:
@@ -126,6 +135,8 @@ class TerraformManager:
         cfg["GIT_TEST_PROJECT_PREFIX"] = cfg.get("GIT_TEST_PROJECT_PREFIX", "terraform-manager-test") or "terraform-manager-test"
         cfg["ACTIVE_ENVIRONMENT"] = cfg.get("ACTIVE_ENVIRONMENT", "") or ""
         cfg["TERRAFORM_TARGET_BRANCH"] = cfg.get("TERRAFORM_TARGET_BRANCH", "develop") or "develop"
+        cfg["ALTEON_USE_LINUXENV"] = cfg.get("ALTEON_USE_LINUXENV", "false") or "false"
+        cfg["ALTEON_USERNAME"] = cfg.get("ALTEON_USERNAME", "") or ""
 
         if cfg["TERRAFORM_TARGET_BRANCH"] not in ("develop", "master"):
             cfg["TERRAFORM_TARGET_BRANCH"] = "develop"
@@ -174,15 +185,15 @@ class TerraformManager:
     @staticmethod
     def parse_config_file(path: Path) -> Dict[str, str]:
         cfg: Dict[str, str] = {}
-        line_re = re.compile(r'^\s*([A-Z0-9_]+)\s*=\s*"(.*)"\s*$')
+        line_re = re.compile(r'^\s*([A-Z0-9_]+)\s*=\s*(?:"(.*)"|([^#\s]+))\s*(?:#.*)?$')
         for raw_line in path.read_text(encoding="utf-8").splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             match = line_re.match(line)
             if match:
-                key, value = match.groups()
-                cfg[key] = value
+                key, quoted_value, plain_value = match.groups()
+                cfg[key] = quoted_value if quoted_value is not None else plain_value
         return cfg
 
     @staticmethod
@@ -234,6 +245,8 @@ class TerraformManager:
             "GIT_TEST_PROJECT_PREFIX",
             "ACTIVE_ENVIRONMENT",
             "TERRAFORM_TARGET_BRANCH",
+            "ALTEON_USE_LINUXENV",
+            "ALTEON_USERNAME",
         ]
 
         lines = ["# Grundkonfiguration fuer manage-terraform.py"]
@@ -1526,7 +1539,54 @@ class TerraformManager:
             print(f"Terraform-Befehl fehlgeschlagen (Exit-Code {result.returncode}).")
         self.pause()
 
+    @staticmethod
+    def config_value_is_true(value: str) -> bool:
+        return value.strip().lower() in ("1", "true", "yes", "ja", "on")
+
+    def ensure_alteon_linuxenv_variables(self) -> bool:
+        if not self.config_value_is_true(self.config.get("ALTEON_USE_LINUXENV", "false")):
+            return True
+
+        self.print_header()
+        print("Alteon Anmeldedaten")
+        print()
+
+        current_username = self.config.get("ALTEON_USERNAME", "").strip()
+        prompt = "Alteon Username"
+        if current_username:
+            prompt += f" [{current_username}]"
+        prompt += ": "
+
+        try:
+            username = input(prompt).strip() or current_username
+            password = getpass.getpass("Alteon Passwort: ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("Eingabe abgebrochen.")
+            self.pause()
+            return False
+
+        if not username:
+            print("Alteon Username darf nicht leer sein.")
+            self.pause()
+            return False
+        if not password:
+            print("Alteon Passwort darf nicht leer sein.")
+            self.pause()
+            return False
+
+        if username != current_username:
+            self.config["ALTEON_USERNAME"] = username
+            self.save_config()
+
+        os.environ["TF_VAR_username"] = username
+        os.environ["TF_VAR_password"] = password
+        return True
+
     def show_terraform_menu(self) -> None:
+        if not self.ensure_alteon_linuxenv_variables():
+            return
+
         while True:
             self.print_header()
             print("Terraform")
