@@ -1547,6 +1547,9 @@ class TerraformManager:
         if not self.config_value_is_true(self.config.get("ALTEON_USE_LINUXENV", "false")):
             return True
 
+        if os.environ.get("TF_VAR_username") and os.environ.get("TF_VAR_password"):
+            return True
+
         self.print_header()
         print("Alteon Anmeldedaten")
         print()

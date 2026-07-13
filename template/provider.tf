@@ -9,8 +9,18 @@ terraform {
  }
 }
 
+variable "username" {
+  type      = string
+  sensitive = true
+}
+
+variable "password" {
+  type      = string
+  sensitive = true
+}
+
 provider "alteon" {
-    username="admin"
-    password="admin"
-    Ip="10.2.0.213"
+  username = var.username
+  password = var.password
+  Ip="10.2.0.213"
 }
