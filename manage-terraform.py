@@ -11,6 +11,7 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 # Changes:
 #   - Konfigurierbare Umgebungs-Folder-Struktur fuer Single- und Master/Develop-Ablage ergaenzt.
 #   - Terraform-Menue um terraform fmt -check zur Formatpruefung erweitert.
+#   - Add Shell in Terraform
 #
 # Version: 0.2.2
 # Build:   20260713-002
@@ -1572,6 +1573,33 @@ class TerraformManager:
             print(f"Terraform-Befehl fehlgeschlagen (Exit-Code {result.returncode}).")
         self.pause()
 
+    def open_shell_in_active_environment(self) -> None:
+        self.print_header()
+        print("Shell mit Terraform-Umgebungsvariablen oeffnen")
+        print()
+
+        if not self.ensure_alteon_linuxenv_variables():
+            return
+
+        env_path = self.ensure_active_environment_path()
+        if env_path is None:
+            self.pause()
+            return
+
+        shell = os.environ.get("SHELL") or os.environ.get("COMSPEC")
+        if not shell:
+            shell = "cmd.exe" if os.name == "nt" else "/bin/sh"
+
+        print(f"Branch: {self.get_selected_branch()}")
+        print(f"Umgebung: {self.config['ACTIVE_ENVIRONMENT']}")
+        print(f"Pfad: {env_path}")
+        print(f"Shell: {shell}")
+        print("Shell mit 'exit' verlassen, um zum Menue zurueckzukehren.")
+        print()
+
+        subprocess.run([shell], cwd=str(env_path), env=os.environ.copy())
+        self.pause()
+
     @staticmethod
     def config_value_is_true(value: str) -> bool:
         return value.strip().lower() in ("1", "true", "yes", "ja", "on")
@@ -1632,14 +1660,15 @@ class TerraformManager:
             self.print_header()
             print("Terraform")
             print()
-            #print(f"Zielbranch: {self.get_selected_branch()}")
+            ##print(f"Zielbranch: {self.get_selected_branch()}")
             print("1) terraform init")
             print("2) terraform fmt -check (Formatierung)")
             print("3) terraform validate (Syntax- und Konsistenzprüfung)")
             print("4) terraform plan (Vorschau)")
+            print("5) Shell mit Terraform-Umgebungsvariablen")
             print()
             print("------ Master only -------")
-            print("5) terraform apply")
+            print("6) terraform apply")
             print("0) Zurueck")
             print()
 
@@ -1653,6 +1682,8 @@ class TerraformManager:
             elif choice == "4":
                 self.run_terraform_in_active_environment(["plan"])
             elif choice == "5":
+                self.open_shell_in_active_environment()
+            elif choice == "6":
                 if self.get_selected_branch() != "master":
                     print("terraform apply ist nur auf dem Zielbranch 'master' moeglich.")
                     self.pause()
