@@ -5,6 +5,8 @@ Dieses Skript ist als plattformunabhaengige Alternative zum bisherigen Bash-Skri
 gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 
+#Todo: ergänze Versionhistory
+
 # Versionshistorie
 # -----------------------------------------------------------------------------
 # Version: 0.2.2
@@ -85,6 +87,7 @@ class TerraformManager:
             "ROOT_DIR": root_dir,
             "TEMPLATE_DIR": "${ROOT_DIR}/template",
             "ENVIRONMENTS_DIR": "${ROOT_DIR}/environments",
+            "ENVIRONMENT_FOLDER_STRUCTURE": "master_develop",
             "MASTER_BRANCH": "master",
             "DEVELOP_BRANCH": "develop",
             "GIT_REMOTE_NAME": "origin",
@@ -125,6 +128,7 @@ class TerraformManager:
         cfg["ROOT_DIR"] = cfg.get("ROOT_DIR", str(self.script_dir)) or str(self.script_dir)
         cfg["TEMPLATE_DIR"] = cfg.get("TEMPLATE_DIR", f'{cfg["ROOT_DIR"]}/template') or f'{cfg["ROOT_DIR"]}/template'
         cfg["ENVIRONMENTS_DIR"] = cfg.get("ENVIRONMENTS_DIR", f'{cfg["ROOT_DIR"]}/environments') or f'{cfg["ROOT_DIR"]}/environments'
+        cfg["ENVIRONMENT_FOLDER_STRUCTURE"] = cfg.get("ENVIRONMENT_FOLDER_STRUCTURE", "master_develop") or "master_develop"
         cfg["MASTER_BRANCH"] = cfg.get("MASTER_BRANCH", "master") or "master"
         cfg["DEVELOP_BRANCH"] = cfg.get("DEVELOP_BRANCH", "develop") or "develop"
         cfg["GIT_REMOTE_NAME"] = cfg.get("GIT_REMOTE_NAME", "origin") or "origin"
@@ -145,6 +149,10 @@ class TerraformManager:
 
         if cfg["TERRAFORM_TARGET_BRANCH"] not in ("develop", "master"):
             cfg["TERRAFORM_TARGET_BRANCH"] = "develop"
+        if cfg["ENVIRONMENT_FOLDER_STRUCTURE"] == "branch":
+            cfg["ENVIRONMENT_FOLDER_STRUCTURE"] = "master_develop"
+        if cfg["ENVIRONMENT_FOLDER_STRUCTURE"] not in ("single", "master_develop"):
+            cfg["ENVIRONMENT_FOLDER_STRUCTURE"] = "master_develop"
 
         self.config = cfg
         self.validate_config()
@@ -175,6 +183,9 @@ class TerraformManager:
 
         if not parse.urlsplit(self.config["GIT_GROUP_URL"]).scheme:
             errors.append(f"GIT_GROUP_URL ist keine gueltige URL: {self.config['GIT_GROUP_URL']}")
+
+        if self.config["ENVIRONMENT_FOLDER_STRUCTURE"] not in ("single", "master_develop"):
+            errors.append("ENVIRONMENT_FOLDER_STRUCTURE muss 'single' oder 'master_develop' sein.")
 
         active_environment = self.config.get("ACTIVE_ENVIRONMENT", "").strip()
         if active_environment and not self.validate_environment_name(active_environment):
@@ -235,6 +246,7 @@ class TerraformManager:
             "ROOT_DIR",
             "TEMPLATE_DIR",
             "ENVIRONMENTS_DIR",
+            "ENVIRONMENT_FOLDER_STRUCTURE",
             "MASTER_BRANCH",
             "DEVELOP_BRANCH",
             "GIT_REMOTE_NAME",
@@ -291,7 +303,12 @@ class TerraformManager:
     def get_environment_root(self) -> Path:
         return Path(self.config["ENVIRONMENTS_DIR"])
 
+    def use_single_environment_folder(self) -> bool:
+        return self.config.get("ENVIRONMENT_FOLDER_STRUCTURE", "master_develop") == "single"
+
     def get_environment_branch_path(self, environment_name: str) -> Path:
+        if self.use_single_environment_folder():
+            return self.get_environment_root() / environment_name
         return self.get_environment_root() / environment_name / self.get_selected_branch()
 
     def list_local_environments(self) -> List[str]:
@@ -302,6 +319,9 @@ class TerraformManager:
         environments: List[str] = []
         selected_branch = self.get_selected_branch()
         for candidate in sorted([p for p in env_dir.iterdir() if p.is_dir()], key=lambda p: p.name):
+            if self.use_single_environment_folder():
+                environments.append(candidate.name)
+                continue
             branch_path = candidate / selected_branch
             if branch_path.is_dir():
                 environments.append(candidate.name)
@@ -1732,6 +1752,34 @@ class TerraformManager:
             self.pause()
             return
 
+        if self.use_single_environment_folder():
+            confirm = input(f"Umgebung '{selected_environment}' wirklich loeschen? [ja/NEIN] ").strip()
+            if confirm != "ja":
+                print("Loeschen abgebrochen.")
+                self.pause()
+                return
+
+            if self.git_available():
+                try:
+                    self.run_git(["rev-parse", "--is-inside-work-tree"], cwd=target_dir, capture=True)
+                    if self.has_uncommitted_changes(target_dir):
+                        force_delete = input("Es gibt lokale, nicht committete Aenderungen. Trotzdem loeschen? [ja/NEIN] ").strip()
+                        if force_delete != "ja":
+                            print("Loeschen abgebrochen.")
+                            self.pause()
+                            return
+                except Exception:
+                    pass
+
+            shutil.rmtree(target_dir)
+            print(f"Umgebung wurde geloescht: {target_dir}")
+            if self.config.get("ACTIVE_ENVIRONMENT") == selected_environment:
+                self.config["ACTIVE_ENVIRONMENT"] = ""
+                self.save_config()
+                print("Aktive Umgebung wurde zurueckgesetzt.")
+            self.pause()
+            return
+
         branch_dirs = sorted(
             [p for p in environment_base_dir.iterdir() if p.is_dir()],
             key=lambda p: p.name,
@@ -1941,7 +1989,10 @@ class TerraformManager:
     def show_menu(self) -> None:
         while True:
             self.print_header()
-            root_repo_output = f'Master/Develop Branches basieren auf Root-Repo: {self.config["ROOT_DIR"]}'
+            if self.use_single_environment_folder():
+                root_repo_output = f'Umgebungen nutzen Single-Folder-Struktur: {self.config["ENVIRONMENTS_DIR"]}'
+            else:
+                root_repo_output = f'Master/Develop Branches basieren auf Root-Repo: {self.config["ROOT_DIR"]}'
             if sys.stdout.isatty():
                 root_repo_output = f"\033[1;33m{root_repo_output}\033[0m"
             print(root_repo_output)
