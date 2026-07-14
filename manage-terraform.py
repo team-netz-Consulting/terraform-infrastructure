@@ -1630,9 +1630,11 @@ class TerraformManager:
             print()
             print(f"Zielbranch: {self.get_selected_branch()}")
             print("1) terraform init")
-            print("2) terraform validate")
-            print("3) terraform plan")
-            print("4) terraform apply")
+            print("2) terraform fmt -check (Formatierung)")
+            print("3) terraform validate (Syntax- und Konsistenzprüfung)")
+            print("4) terraform plan (Vorschau)")
+            print("------ Master only -------")
+            print("5) terraform apply")
             print("0) Zurueck")
             print()
 
@@ -1640,10 +1642,12 @@ class TerraformManager:
             if choice == "1":
                 self.run_terraform_in_active_environment(["init"])
             elif choice == "2":
-                self.run_terraform_in_active_environment(["validate"])
+                self.run_terraform_in_active_environment(["fmt", "-check"])
             elif choice == "3":
-                self.run_terraform_in_active_environment(["plan"])
+                self.run_terraform_in_active_environment(["validate"])
             elif choice == "4":
+                self.run_terraform_in_active_environment(["plan"])
+            elif choice == "5":
                 if self.get_selected_branch() != "master":
                     print("terraform apply ist nur auf dem Zielbranch 'master' moeglich.")
                     self.pause()
