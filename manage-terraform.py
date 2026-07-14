@@ -4,11 +4,14 @@
 Dieses Skript ist als plattformunabhaengige Alternative zum bisherigen Bash-Skript
 gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
-
-#Todo: ergänze Versionhistory
-
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.3
+# Build:   20260714-001
+# Changes:
+#   - Konfigurierbare Umgebungs-Folder-Struktur fuer Single- und Master/Develop-Ablage ergaenzt.
+#   - Terraform-Menue um terraform fmt -check zur Formatpruefung erweitert.
+#
 # Version: 0.2.2
 # Build:   20260713-002
 # Changes:
@@ -53,10 +56,11 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.2"
-SCRIPT_BUILD = "20260713-002"
+SCRIPT_VERSION = "0.2.3"
+SCRIPT_BUILD = "20260714-001"
 SCRIPT_CHANGELOG = (
-    "Versionshinweis fuer die aktualisierten Terraform-Templates erneuert.",
+    "Konfigurierbare Umgebungs-Folder-Struktur fuer Single- und Master/Develop-Ablage ergaenzt.",
+    "Terraform-Menue um terraform fmt -check zur Formatpruefung erweitert.",
 )
 
 
@@ -1628,11 +1632,12 @@ class TerraformManager:
             self.print_header()
             print("Terraform")
             print()
-            print(f"Zielbranch: {self.get_selected_branch()}")
+            #print(f"Zielbranch: {self.get_selected_branch()}")
             print("1) terraform init")
             print("2) terraform fmt -check (Formatierung)")
             print("3) terraform validate (Syntax- und Konsistenzprüfung)")
             print("4) terraform plan (Vorschau)")
+            print()
             print("------ Master only -------")
             print("5) terraform apply")
             print("0) Zurueck")
