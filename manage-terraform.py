@@ -4,14 +4,23 @@
 Dieses Skript ist als plattformunabhaengige Alternative zum bisherigen Bash-Skript
 gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
+
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.4
+# Build:   20260715-001
+# Changes:
+#   - Info-Seite mit Root-, Parameter-, Umgebungs- und Ordnerstruktur-Angaben ergaenzt.
+#   - Menue-Ueberschriften und wichtige Statusbereiche bei TTY-Ausgabe fett hervorgehoben.
+#   - Globale Git-Konfiguration im GitLab-Menue direkt bearbeitbar gemacht.
+#
 # Version: 0.2.3
 # Build:   20260714-001
 # Changes:
 #   - Konfigurierbare Umgebungs-Folder-Struktur fuer Single- und Master/Develop-Ablage ergaenzt.
 #   - Terraform-Menue um terraform fmt -check zur Formatpruefung erweitert.
 #   - Add Shell in Terraform
+#   - GitLab-Menue um globale Git-Konfiguration und Pull-Abfrage nach Branchwechsel erweitert.
 #
 # Version: 0.2.2
 # Build:   20260713-002
@@ -57,11 +66,12 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.3"
-SCRIPT_BUILD = "20260714-001"
+SCRIPT_VERSION = "0.2.4"
+SCRIPT_BUILD = "20260715-001"
 SCRIPT_CHANGELOG = (
-    "Konfigurierbare Umgebungs-Folder-Struktur fuer Single- und Master/Develop-Ablage ergaenzt.",
-    "Terraform-Menue um terraform fmt -check zur Formatpruefung erweitert.",
+    "Info-Seite mit Root-, Parameter-, Umgebungs- und Ordnerstruktur-Angaben ergaenzt.",
+    "Menue-Ueberschriften und wichtige Statusbereiche bei TTY-Ausgabe fett hervorgehoben.",
+    "Globale Git-Konfiguration im GitLab-Menue direkt bearbeitbar gemacht.",
 )
 
 
@@ -284,12 +294,19 @@ class TerraformManager:
         except EOFError:
             pass
 
+    @staticmethod
+    def bold_text(text: str) -> str:
+        if sys.stdout.isatty():
+            return f"\033[1m{text}\033[0m"
+        return text
+
+    def print_heading(self, text: str) -> None:
+        print(self.bold_text(text))
+
     def print_header(self) -> None:
         if sys.stdout.isatty():
             os.system("cls" if os.name == "nt" else "clear")
-        print(f"Terraform Umgebungsverwaltung - Version {self.script_version} (Build {self.script_build})")
-        print(f'Root: {self.config["ROOT_DIR"]}')
-        print(f"Parameterdatei: {self.config_file}")
+        self.print_heading(f"Terraform Umgebungsverwaltung - Version {self.script_version} (Build {self.script_build})")
         terraform_branch_output = f'Terraform-Zielbranch: {self.config["TERRAFORM_TARGET_BRANCH"]}'
         if sys.stdout.isatty():
             terraform_branch_output = f"\033[1;36m{terraform_branch_output}\033[0m"
@@ -301,6 +318,22 @@ class TerraformManager:
             print(active_environment_output)
         print()
 
+    def show_info_site(self) -> None:
+        self.print_header()
+        self.print_heading("Info")
+        print()
+        print(f'Root: {self.config["ROOT_DIR"]}')
+        print(f"Parameterdatei: {self.config_file}")
+        print(f'Umgebungen: {self.config["ENVIRONMENTS_DIR"]}')
+        if self.use_single_environment_folder():
+            print("Ordnerstruktur: Single-Folder pro Umgebung")
+        else:
+            print("Ordnerstruktur: Master/Develop Branches unterhalb der Umgebung")
+        print()
+        print(f"Bei fragen bitte an loadbalancer@hzd.hessen.de")
+        print()
+        self.pause()
+        
     def get_selected_branch(self) -> str:
         branch = self.config.get("TERRAFORM_TARGET_BRANCH", "develop")
         return branch if branch in ("develop", "master") else "develop"
@@ -338,7 +371,7 @@ class TerraformManager:
 
     def select_active_environment(self) -> None:
         self.print_header()
-        print("Aktive Umgebung auswaehlen")
+        self.print_heading("Aktive Umgebung auswaehlen")
         print()
 
         environments = self.list_local_environments()
@@ -347,7 +380,7 @@ class TerraformManager:
             self.pause()
             return
 
-        print("Verfuegbare Umgebungen:")
+        self.print_heading("Verfuegbare Umgebungen:")
         for idx, env in enumerate(environments, start=1):
             marker = " (aktiv)" if env == self.config.get("ACTIVE_ENVIRONMENT", "") else ""
             print(f"  {idx}) {env}{marker}")
@@ -419,7 +452,7 @@ class TerraformManager:
 
     def check_gitlab_required_packages(self) -> None:
         self.print_header()
-        print("GitLab - benoetigte Pakete pruefen")
+        self.print_heading("GitLab - benoetigte Pakete pruefen")
         print()
 
         required_commands = (
@@ -438,7 +471,7 @@ class TerraformManager:
 
         print()
         if missing:
-            print("Fehlende Pakete installieren, bevor GitLab-Funktionen verwendet werden:")
+            self.print_heading("Fehlende Pakete installieren, bevor GitLab-Funktionen verwendet werden:")
             print(f"  {', '.join(missing)}")
         else:
             print("Alle benoetigten Pakete fuer die GitLab-Kommunikation sind installiert.")
@@ -631,7 +664,7 @@ class TerraformManager:
 
     def configure_gitlab_login_for_session(self) -> None:
         self.print_header()
-        print("GitLab Anmeldung setzen")
+        self.print_heading("GitLab Anmeldung setzen")
         print()
         print("1) Access Token verwenden")
         print("2) Benutzer und Passwort verwenden")
@@ -669,7 +702,7 @@ class TerraformManager:
 
     def test_gitlab_login(self) -> None:
         self.print_header()
-        print("GitLab Anmeldung testen")
+        self.print_heading("GitLab Anmeldung testen")
         print()
         self.print_gitlab_settings()
         print()
@@ -701,7 +734,7 @@ class TerraformManager:
 
     def show_gitlab_group(self) -> None:
         self.print_header()
-        print("GitLab Gruppe pruefen")
+        self.print_heading("GitLab Gruppe pruefen")
         print()
         self.print_gitlab_settings()
         print()
@@ -742,7 +775,7 @@ class TerraformManager:
 
     def list_gitlab_projects(self) -> None:
         self.print_header()
-        print("GitLab Projekte auflisten")
+        self.print_heading("GitLab Projekte auflisten")
         print()
         self.print_gitlab_settings()
         print()
@@ -758,14 +791,14 @@ class TerraformManager:
             self.pause()
             return
 
-        print("Projekte:")
+        self.print_heading("Projekte:")
         for proj in projects:
             print(f"  - {proj.get('path_with_namespace', 'unbekannt')} ({proj.get('web_url', 'unbekannt')})")
         self.pause()
 
     def create_gitlab_test_project(self) -> None:
         self.print_header()
-        print("GitLab Testprojekt erstellen")
+        self.print_heading("GitLab Testprojekt erstellen")
         print()
         self.print_gitlab_settings()
         print()
@@ -798,7 +831,7 @@ class TerraformManager:
 
     def run_gitlab_full_test(self) -> None:
         self.print_header()
-        print("GitLab Gesamttest")
+        self.print_heading("GitLab Gesamttest")
         print()
         self.print_gitlab_settings()
         print()
@@ -839,7 +872,7 @@ class TerraformManager:
     def show_gitlab_test_menu(self) -> None:
         while True:
             self.print_header()
-            print("GitLab-Anbindung testen")
+            self.print_heading("GitLab-Anbindung testen")
             print()
             self.print_gitlab_settings()
             print()
@@ -1023,11 +1056,11 @@ class TerraformManager:
             return True
 
         print()
-        print("Konflikte gefunden:")
+        self.print_heading("Konflikte gefunden:")
         for file_name in conflicted:
             print(f"  - {file_name}")
         print()
-        print("Welche Version soll fuer alle Konfliktdateien uebernommen werden?")
+        self.print_heading("Welche Version soll fuer alle Konfliktdateien uebernommen werden?")
         print("1) Lokal")
         print("2) Remote")
         print("0) Abbrechen")
@@ -1076,7 +1109,7 @@ class TerraformManager:
 
         print()
         print("Lokaler und Remote-Branch sind auseinander gelaufen.")
-        print("Was soll gemacht werden?")
+        self.print_heading("Was soll gemacht werden?")
         print("1) Rebase: lokale Commits auf Remote neu aufsetzen")
         print("2) Merge: Remote in lokalen Branch mergen")
         print("3) Remote hart uebernehmen (lokale Commits/Aenderungen verwerfen)")
@@ -1145,7 +1178,7 @@ class TerraformManager:
         self.print_header()
         branch_name = self.get_selected_branch()
         remote_name = self.config["GIT_REMOTE_NAME"]
-        print(f"Pull remote to local ({branch_name})")
+        self.print_heading(f"Pull remote to local ({branch_name})")
         print()
 
         if not self.git_available():
@@ -1212,7 +1245,7 @@ class TerraformManager:
         self.print_header()
         branch_name = self.get_selected_branch()
         remote_name = self.config["GIT_REMOTE_NAME"]
-        print(f"GitLab - Diff remote / local ({branch_name})")
+        self.print_heading(f"GitLab - Diff remote / local ({branch_name})")
         print()
 
         if not self.git_available():
@@ -1256,16 +1289,70 @@ class TerraformManager:
         print()
         print(status or "Keine lokalen Status-Aenderungen.")
         print()
-        print("Commit-Differenz:")
+        self.print_heading("Commit-Differenz:")
         print(commits or "Keine Commit-Differenz zwischen lokalem HEAD und Remote.")
         print()
-        print("Datei-Differenz:")
+        self.print_heading("Datei-Differenz:")
         print(diff_stat or "Keine Datei-Differenz zwischen lokalem HEAD und Remote.")
+        self.pause()
+
+    def print_active_environment_git_status(self) -> None:
+        env_path = self.ensure_active_environment_path()
+        if env_path is None:
+            return
+
+        try:
+            self.run_git(["rev-parse", "--is-inside-work-tree"], cwd=env_path, capture=True)
+        except Exception:
+            print(f"Kein gueltiges Git-Repository fuer aktive Umgebung gefunden: {env_path}")
+            return
+
+        try:
+            status = self.run_git(["status", "--short", "--branch"], cwd=env_path, capture=True).stdout.strip()
+        except Exception as exc:
+            print("Git-Status konnte nicht ermittelt werden.")
+            print(str(exc))
+            return
+
+        print()
+        self.print_heading(f"Git-Status fuer aktive Umgebung: {env_path}")
+        print(status or "Keine lokalen Status-Aenderungen.")
+
+    def edit_global_git_config(self) -> None:
+        self.print_header()
+        self.print_heading("Git - globale Konfiguration bearbeiten")
+        print()
+
+        if not self.git_available():
+            print("Git ist nicht installiert oder nicht im PATH.")
+            self.pause()
+            return
+
+        print("Oeffne: git config --global --edit")
+        print("Editor schliessen, um zum Menue zurueckzukehren.")
+        print()
+
+        try:
+            completed = subprocess.run(
+                ["git", "config", "--global", "--edit"],
+                text=True,
+                env=os.environ.copy(),
+            )
+        except Exception as exc:
+            print("Git-Konfiguration konnte nicht geoeffnet werden.")
+            print(str(exc))
+            self.pause()
+            return
+
+        if completed.returncode == 0:
+            print("Globale Git-Konfiguration wurde geschlossen.")
+        else:
+            print(f"Git-Konfiguration wurde mit Exit-Code {completed.returncode} beendet.")
         self.pause()
 
     def open_git_branch(self, menu_name: str, branch_name: str) -> None:
         self.print_header()
-        print(f"{menu_name}-Branch oeffnen ({branch_name})")
+        self.print_heading(f"{menu_name}-Branch oeffnen ({branch_name})")
         print()
 
         if not self.git_available():
@@ -1329,7 +1416,7 @@ class TerraformManager:
 
     def commit_git_changes(self) -> None:
         self.print_header()
-        print("GitLab - Commit lokal")
+        self.print_heading("GitLab - Commit lokal")
         print()
 
         if not self.git_available():
@@ -1390,7 +1477,7 @@ class TerraformManager:
 
     def push_git_changes(self) -> None:
         self.print_header()
-        print("GitLab - Push remote")
+        self.print_heading("GitLab - Push remote")
         print()
 
         if not self.git_available():
@@ -1449,7 +1536,7 @@ class TerraformManager:
     def show_gitlab_menu(self) -> None:
         while True:
             self.print_header()
-            print("GitLab")
+            self.print_heading("GitLab")
             print()
             print(f"Zielbranch: {self.get_selected_branch()}")
             print("1) Zielbranch festlegen (develop/master)")
@@ -1459,6 +1546,7 @@ class TerraformManager:
             print("5) Diff (remote / local)")
             print("6) Anbindung testen")
             print("7) Benoetigte Pakete pruefen")
+            print("8) Globale Git-Konfiguration bearbeiten")
             print("0) Zurueck")
             print()
 
@@ -1477,6 +1565,8 @@ class TerraformManager:
                 self.show_gitlab_test_menu()
             elif choice == "7":
                 self.check_gitlab_required_packages()
+            elif choice == "8":
+                self.edit_global_git_config()
             elif choice == "0":
                 return
             else:
@@ -1485,7 +1575,7 @@ class TerraformManager:
 
     def set_terraform_target_branch(self) -> None:
         self.print_header()
-        print("Terraform-Zielbranch festlegen")
+        self.print_heading("Terraform-Zielbranch festlegen")
         print()
         print(f"Aktuell: {self.get_selected_branch()}")
         print("1) develop")
@@ -1508,9 +1598,19 @@ class TerraformManager:
             self.pause()
             return
 
+        previous = self.get_selected_branch()
         self.config["TERRAFORM_TARGET_BRANCH"] = selected
         self.save_config()
         print(f"Terraform-Zielbranch gesetzt: {selected}")
+
+        if selected != previous and self.config.get("ACTIVE_ENVIRONMENT"):
+            print()
+            pull_now = input("Aktive Umgebung jetzt auf diesen Branch aktualisieren (Pull)? [ja/NEIN] ").strip()
+            if pull_now == "ja":
+                self.open_selected_branch_for_active_environment()
+                return
+            self.print_active_environment_git_status()
+
         self.pause()
 
     def ensure_active_environment_path(self) -> Optional[Path]:
@@ -1532,7 +1632,7 @@ class TerraformManager:
 
     def run_terraform_in_active_environment(self, terraform_args: List[str]) -> None:
         self.print_header()
-        print("Terraform ausfuehren")
+        self.print_heading("Terraform ausfuehren")
         print()
 
         if shutil.which("terraform") is None:
@@ -1575,7 +1675,7 @@ class TerraformManager:
 
     def open_shell_in_active_environment(self) -> None:
         self.print_header()
-        print("Shell mit Terraform-Umgebungsvariablen oeffnen")
+        self.print_heading("Shell mit Terraform-Umgebungsvariablen oeffnen")
         print()
 
         if not self.ensure_alteon_linuxenv_variables():
@@ -1616,7 +1716,7 @@ class TerraformManager:
             return True
 
         self.print_header()
-        print("Alteon Anmeldedaten")
+        self.print_heading("Alteon Anmeldedaten")
         print()
 
         current_username = self.config.get("ALTEON_USERNAME", "").strip()
@@ -1658,7 +1758,7 @@ class TerraformManager:
 
         while True:
             self.print_header()
-            print("Terraform")
+            self.print_heading("Terraform")
             print()
             ##print(f"Zielbranch: {self.get_selected_branch()}")
             print("1) terraform init")
@@ -1667,7 +1767,7 @@ class TerraformManager:
             print("4) terraform plan (Vorschau)")
             print("5) Shell mit Terraform-Umgebungsvariablen")
             print()
-            print("------ Master only -------")
+            self.print_heading("------ Master only -------")
             print("6) terraform apply")
             print("0) Zurueck")
             print()
@@ -1702,7 +1802,7 @@ class TerraformManager:
 
     def create_environment(self) -> None:
         self.print_header()
-        print("Neue Umgebung erstellen")
+        self.print_heading("Neue Umgebung erstellen")
         print()
 
         template_dir = Path(self.config["TEMPLATE_DIR"])
@@ -1748,7 +1848,7 @@ class TerraformManager:
 
     def delete_environment(self) -> None:
         self.print_header()
-        print("Bestehende Umgebung loeschen")
+        self.print_heading("Bestehende Umgebung loeschen")
         print()
 
         env_dir = self.get_environment_root()
@@ -1763,7 +1863,7 @@ class TerraformManager:
             self.pause()
             return
 
-        print("Vorhandene Umgebungen:")
+        self.print_heading("Vorhandene Umgebungen:")
         for idx, env in enumerate(environments, start=1):
             print(f"  {idx}) {env}")
         print()
@@ -1825,7 +1925,7 @@ class TerraformManager:
             key=lambda p: p.name,
         )
 
-        print("Loeschmodus:")
+        self.print_heading("Loeschmodus:")
         print(f"1) Nur aktuellen Branch loeschen ({self.get_selected_branch()}): {target_dir}")
         if branch_dirs:
             print(f"2) Gesamte Umgebung loeschen (alle Branches): {', '.join([p.name for p in branch_dirs])}")
@@ -1859,7 +1959,7 @@ class TerraformManager:
                     continue
 
             if dirty_paths:
-                print("Warnung: Es gibt lokale, nicht committete Aenderungen in:")
+                self.print_heading("Warnung: Es gibt lokale, nicht committete Aenderungen in:")
                 for path in dirty_paths:
                     print(f"  - {path}")
                 force_delete = input("Trotzdem loeschen? [ja/NEIN] ").strip()
@@ -1900,7 +2000,7 @@ class TerraformManager:
 
     def show_environments(self) -> None:
         self.print_header()
-        print("Lokale Umgebungen")
+        self.print_heading("Lokale Umgebungen")
         print()
 
         env_dir = self.get_environment_root()
@@ -1915,7 +2015,7 @@ class TerraformManager:
             self.pause()
             return
 
-        print("Vorhandene Umgebungen:")
+        self.print_heading("Vorhandene Umgebungen:")
         for env in environments:
             marker = " (aktiv)" if env == self.config.get("ACTIVE_ENVIRONMENT", "") else ""
             print(f"  - {env}{marker} [{self.get_selected_branch()}]")
@@ -1923,7 +2023,7 @@ class TerraformManager:
 
     def clone_environment_from_gitlab(self) -> None:
         self.print_header()
-        print("Umgebung aus GitLab klonen")
+        self.print_heading("Umgebung aus GitLab klonen")
         print()
         self.print_gitlab_settings()
         print()
@@ -1950,7 +2050,7 @@ class TerraformManager:
         env_dir = self.get_environment_root()
         env_dir.mkdir(parents=True, exist_ok=True)
 
-        print("Verfuegbare Projekte:")
+        self.print_heading("Verfuegbare Projekte:")
         project_paths = [str(item.get("path_with_namespace", "")) for item in projects if item.get("path_with_namespace")]
         for idx, path in enumerate(project_paths, start=1):
             print(f"  {idx}) {path}")
@@ -2002,7 +2102,7 @@ class TerraformManager:
     def show_environment_management_menu(self) -> None:
         while True:
             self.print_header()
-            print("Umgebungen verwalten")
+            self.print_heading("Umgebungen lokal verwalten")
             print()
             print("1) Neue Umgebung erstellen")
             print("2) Bestehende Umgebung loeschen")
@@ -2029,17 +2129,11 @@ class TerraformManager:
     def show_menu(self) -> None:
         while True:
             self.print_header()
-            if self.use_single_environment_folder():
-                root_repo_output = f'Umgebungen nutzen Single-Folder-Struktur: {self.config["ENVIRONMENTS_DIR"]}'
-            else:
-                root_repo_output = f'Master/Develop Branches basieren auf Root-Repo: {self.config["ROOT_DIR"]}'
-            if sys.stdout.isatty():
-                root_repo_output = f"\033[1;33m{root_repo_output}\033[0m"
-            print(root_repo_output)
             print("1) Aktive Umgebung auswaehlen")
             print("2) Terraform")
             print("3) GitLab")
             print("4) Umgebungen verwalten")
+            print("5) Info")
             print("0) Beenden")
             print()
             
@@ -2052,6 +2146,8 @@ class TerraformManager:
                 self.show_gitlab_menu()
             elif choice == "4":
                 self.show_environment_management_menu()
+            elif choice == "5":
+                self.show_info_site()
             elif choice == "0":
                 print("Skript beendet.")
                 return
