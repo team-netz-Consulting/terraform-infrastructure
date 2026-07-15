@@ -4,7 +4,6 @@
 Dieses Skript ist als plattformunabhaengige Alternative zum bisherigen Bash-Skript
 gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
-
 # Versionshistorie
 # -----------------------------------------------------------------------------
 # Version: 0.2.4
@@ -13,6 +12,7 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 #   - Info-Seite mit Root-, Parameter-, Umgebungs- und Ordnerstruktur-Angaben ergaenzt.
 #   - Menue-Ueberschriften und wichtige Statusbereiche bei TTY-Ausgabe fett hervorgehoben.
 #   - Globale Git-Konfiguration im GitLab-Menue direkt bearbeitbar gemacht.
+#   - Git-Askpass-Umgebung vor authentifizierten Git-Befehlen korrekt vorbereitet.
 #
 # Version: 0.2.3
 # Build:   20260714-001
@@ -72,6 +72,7 @@ SCRIPT_CHANGELOG = (
     "Info-Seite mit Root-, Parameter-, Umgebungs- und Ordnerstruktur-Angaben ergaenzt.",
     "Menue-Ueberschriften und wichtige Statusbereiche bei TTY-Ausgabe fett hervorgehoben.",
     "Globale Git-Konfiguration im GitLab-Menue direkt bearbeitbar gemacht.",
+    "Git-Askpass-Umgebung vor authentifizierten Git-Befehlen korrekt vorbereitet.",
 )
 
 
@@ -622,10 +623,12 @@ class TerraformManager:
         os.environ["TERRAFORM_MANAGER_GIT_PASSWORD"] = password
 
     def git_env(self, auth: bool = False) -> Dict[str, str]:
+        if auth:
+            self.prepare_git_authentication()
+
         env = os.environ.copy()
         env["GIT_EDITOR"] = "true"
         if auth:
-            self.prepare_git_authentication()
             if self.askpass_script:
                 env["GIT_ASKPASS"] = str(self.askpass_script)
             env["GIT_TERMINAL_PROMPT"] = "0"
@@ -1047,7 +1050,15 @@ class TerraformManager:
                 capture=True,
             )
             return True
-        except Exception:
+        except Exception as exc:
+            msg = str(exc)
+            if (
+                "Authentication failed" in msg
+                or "Access denied" in msg
+                or "Could not resolve host" in msg
+                or "unable to access" in msg
+            ):
+                raise
             return False
 
     def resolve_git_conflicts(self, repo_dir: Path, *, mode: str) -> bool:
@@ -1204,7 +1215,15 @@ class TerraformManager:
             self.pause()
             return
 
-        if self.remote_branch_exists(target_dir, branch_name):
+        try:
+            remote_exists = self.remote_branch_exists(target_dir, branch_name)
+        except Exception as exc:
+            print("Remote-Branch konnte nicht geprueft werden.")
+            print(str(exc))
+            self.pause()
+            return
+
+        if remote_exists:
             try:
                 if self.has_uncommitted_changes(target_dir):
                     print("Es gibt lokale, nicht committete Aenderungen.")
@@ -1265,7 +1284,15 @@ class TerraformManager:
             self.pause()
             return
 
-        if not self.remote_branch_exists(env_path, branch_name):
+        try:
+            remote_exists = self.remote_branch_exists(env_path, branch_name)
+        except Exception as exc:
+            print("Remote-Branch konnte nicht geprueft werden.")
+            print(str(exc))
+            self.pause()
+            return
+
+        if not remote_exists:
             print(f"Remote-Branch '{remote_name}/{branch_name}' existiert nicht.")
             self.pause()
             return
