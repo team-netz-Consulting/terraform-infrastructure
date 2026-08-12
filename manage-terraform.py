@@ -6,6 +6,11 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.5
+# Build:   20260812-001
+# Changes:
+#   - Remote-/Local-Diff zeigt Commit-Anzahl, betroffene Dateien und den vollstaendigen Patch.
+#
 # Version: 0.2.4
 # Build:   20260715-001
 # Changes:
@@ -66,13 +71,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.4"
-SCRIPT_BUILD = "20260715-001"
+SCRIPT_VERSION = "0.2.5"
+SCRIPT_BUILD = "20260812-001"
 SCRIPT_CHANGELOG = (
-    "Info-Seite mit Root-, Parameter-, Umgebungs- und Ordnerstruktur-Angaben ergaenzt.",
-    "Menue-Ueberschriften und wichtige Statusbereiche bei TTY-Ausgabe fett hervorgehoben.",
-    "Globale Git-Konfiguration im GitLab-Menue direkt bearbeitbar gemacht.",
-    "Git-Askpass-Umgebung vor authentifizierten Git-Befehlen korrekt vorbereitet.",
+    "Remote-/Local-Diff zeigt Commit-Anzahl, betroffene Dateien und den vollstaendigen Patch.",
 )
 
 
@@ -1299,13 +1301,26 @@ class TerraformManager:
 
         try:
             self.run_git(["fetch", remote_name, branch_name], cwd=env_path, auth=True)
+            remote_ref = f"{remote_name}/{branch_name}"
             status = self.run_git(["status", "--short", "--branch"], cwd=env_path, capture=True).stdout.strip()
+            ahead_behind = self.run_git(
+                ["rev-list", "--left-right", "--count", f"HEAD...{remote_ref}"],
+                cwd=env_path,
+                capture=True,
+            ).stdout.split()
             commits = self.run_git(
-                ["log", "--left-right", "--cherry-pick", "--oneline", f"HEAD...{remote_name}/{branch_name}"],
+                ["log", "--left-right", "--cherry-pick", "--oneline", f"HEAD...{remote_ref}"],
                 cwd=env_path,
                 capture=True,
             ).stdout.strip()
-            diff_stat = self.run_git(["diff", "--stat", f"HEAD..{remote_name}/{branch_name}"], cwd=env_path, capture=True).stdout.strip()
+            changed_files = self.run_git(
+                ["diff", "--name-status", remote_ref, "--"], cwd=env_path, capture=True
+            ).stdout.strip()
+            patch = self.run_git(
+                ["diff", "--no-ext-diff", "--no-color", remote_ref, "--"],
+                cwd=env_path,
+                capture=True,
+            ).stdout.strip()
         except Exception as exc:
             print("Diff konnte nicht ermittelt werden.")
             print(str(exc))
@@ -1314,13 +1329,21 @@ class TerraformManager:
 
         print(f"Arbeitsverzeichnis: {env_path}")
         print()
+        if len(ahead_behind) == 2:
+            print(f"Lokale Commits voraus: {ahead_behind[0]}")
+            print(f"Lokale Commits zurueck: {ahead_behind[1]}")
+            print()
+        self.print_heading("Git-Status:")
         print(status or "Keine lokalen Status-Aenderungen.")
         print()
         self.print_heading("Commit-Differenz:")
         print(commits or "Keine Commit-Differenz zwischen lokalem HEAD und Remote.")
         print()
-        self.print_heading("Datei-Differenz:")
-        print(diff_stat or "Keine Datei-Differenz zwischen lokalem HEAD und Remote.")
+        self.print_heading(f"Geaenderte Dateien (gegen {remote_ref}):")
+        print(changed_files or "Keine versionierten Datei-Aenderungen gegen den Remote-Stand.")
+        print()
+        self.print_heading(f"Aenderungen (von {remote_ref} zum lokalen Arbeitsstand):")
+        print(patch or "Keine inhaltlichen Aenderungen gegen den Remote-Stand.")
         self.pause()
 
     def print_active_environment_git_status(self) -> None:
