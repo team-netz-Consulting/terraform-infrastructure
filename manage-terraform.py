@@ -6,6 +6,11 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.6
+# Build:   20260813-001
+# Changes:
+#   - Terraform-Ausgabe wird direkt ans Terminal geleitet, damit interaktive Abfragen sichtbar sind.
+#
 # Version: 0.2.5
 # Build:   20260812-001
 # Changes:
@@ -71,10 +76,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.5"
-SCRIPT_BUILD = "20260812-001"
+SCRIPT_VERSION = "0.2.6"
+SCRIPT_BUILD = "20260813-001"
 SCRIPT_CHANGELOG = (
-    "Remote-/Local-Diff zeigt Commit-Anzahl, betroffene Dateien und den vollstaendigen Patch.",
+    "Terraform-Ausgabe wird direkt ans Terminal geleitet, damit interaktive Abfragen sichtbar sind.",
 )
 
 
@@ -1709,13 +1714,7 @@ class TerraformManager:
             cwd=str(env_path),
             env=os.environ.copy(),
             text=True,
-            capture_output=True,
         )
-
-        if result.stdout:
-            print(result.stdout)
-        if result.stderr:
-            print(result.stderr)
 
         if result.returncode == 0:
             print("Terraform-Befehl erfolgreich.")
