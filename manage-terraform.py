@@ -6,6 +6,11 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.8
+# Build:   20260813-003
+# Changes:
+#   - Warnung vor Aenderungen in der Terraform-Shell wird im Master-Branch rot dargestellt.
+#
 # Version: 0.2.7
 # Build:   20260813-002
 # Changes:
@@ -81,10 +86,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.7"
-SCRIPT_BUILD = "20260813-002"
+SCRIPT_VERSION = "0.2.8"
+SCRIPT_BUILD = "20260813-003"
 SCRIPT_CHANGELOG = (
-    "Branchabhaengiger Sicherheitshinweis vor dem Oeffnen der Terraform-Shell ergaenzt.",
+    "Warnung vor Aenderungen in der Terraform-Shell wird im Master-Branch rot dargestellt.",
 )
 
 
@@ -311,6 +316,12 @@ class TerraformManager:
     def bold_text(text: str) -> str:
         if sys.stdout.isatty():
             return f"\033[1m{text}\033[0m"
+        return text
+
+    @staticmethod
+    def red_text(text: str) -> str:
+        if sys.stdout.isatty():
+            return f"\033[1;31m{text}\033[0m"
         return text
 
     def print_heading(self, text: str) -> None:
@@ -1747,13 +1758,19 @@ class TerraformManager:
         selected_branch = self.get_selected_branch()
         current_branch = self.get_current_branch_name(env_path)
 
-        self.print_heading("WICHTIG")
         if current_branch == "develop":
+            self.print_heading("WICHTIG")
             print("Sie befinden sich im Develop-Branch. Aenderungen koennen hier vorgenommen werden.")
+        elif current_branch == "master":
+            print(self.red_text("WICHTIG"))
+            print(self.red_text("Sie befinden sich im Master-Branch."))
+            print(self.red_text("Nehmen Sie Aenderungen nur im Develop-Branch vor."))
         elif current_branch:
+            self.print_heading("WICHTIG")
             print(f"Sie befinden sich im Branch '{current_branch}'.")
             print("Nehmen Sie Aenderungen nur im Develop-Branch vor.")
         else:
+            self.print_heading("WICHTIG")
             print("Der aktive Git-Branch konnte nicht ermittelt werden.")
             print("Pruefen Sie vor Aenderungen, dass Sie sich im Develop-Branch befinden.")
         if current_branch and current_branch != selected_branch:
