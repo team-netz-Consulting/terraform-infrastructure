@@ -6,6 +6,11 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.2.7
+# Build:   20260813-002
+# Changes:
+#   - Branchabhaengiger Sicherheitshinweis vor dem Oeffnen der Terraform-Shell ergaenzt.
+#
 # Version: 0.2.6
 # Build:   20260813-001
 # Changes:
@@ -76,10 +81,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.6"
-SCRIPT_BUILD = "20260813-001"
+SCRIPT_VERSION = "0.2.7"
+SCRIPT_BUILD = "20260813-002"
 SCRIPT_CHANGELOG = (
-    "Terraform-Ausgabe wird direkt ans Terminal geleitet, damit interaktive Abfragen sichtbar sind.",
+    "Branchabhaengiger Sicherheitshinweis vor dem Oeffnen der Terraform-Shell ergaenzt.",
 )
 
 
@@ -1739,7 +1744,24 @@ class TerraformManager:
         if not shell:
             shell = "cmd.exe" if os.name == "nt" else "/bin/sh"
 
-        print(f"Branch: {self.get_selected_branch()}")
+        selected_branch = self.get_selected_branch()
+        current_branch = self.get_current_branch_name(env_path)
+
+        self.print_heading("WICHTIG")
+        if current_branch == "develop":
+            print("Sie befinden sich im Develop-Branch. Aenderungen koennen hier vorgenommen werden.")
+        elif current_branch:
+            print(f"Sie befinden sich im Branch '{current_branch}'.")
+            print("Nehmen Sie Aenderungen nur im Develop-Branch vor.")
+        else:
+            print("Der aktive Git-Branch konnte nicht ermittelt werden.")
+            print("Pruefen Sie vor Aenderungen, dass Sie sich im Develop-Branch befinden.")
+        if current_branch and current_branch != selected_branch:
+            print(f"Achtung: Git-Branch und ausgewaehlter Zielbranch '{selected_branch}' stimmen nicht ueberein.")
+        print()
+
+        print(f"Zielbranch: {selected_branch}")
+        print(f"Git-Branch: {current_branch or 'unbekannt'}")
         print(f"Umgebung: {self.config['ACTIVE_ENVIRONMENT']}")
         print(f"Pfad: {env_path}")
         print(f"Shell: {shell}")
