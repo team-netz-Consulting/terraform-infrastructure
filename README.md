@@ -8,7 +8,7 @@ Das Projekt soll die Arbeit mit Terraform-Infrastruktur reproduzierbarer und lei
 
 - aktive Terraform-Umgebung auswaehlen
 - Zielbranch `develop` oder `master` festlegen
-- Umgebung aus dem Template erstellen
+- Umgebung aus einem Alteon- oder NetScaler-ADC-Template erstellen
 - Umgebung aus GitLab klonen
 - lokale und entfernte Aenderungen per Git verwalten
 - Terraform-Befehle wie `init`, `validate`, `plan` und `apply` ausfuehren
@@ -51,11 +51,19 @@ Beim ersten Start wird bei Bedarf eine Konfigurationsdatei `manage-terraform.con
 Die wichtigsten Einstellungen liegen in `manage-terraform.conf`, unter anderem:
 
 - `ROOT_DIR`: Projektwurzel
-- `TEMPLATE_DIR`: Vorlage fuer neue Umgebungen
+- `TEMPLATE_DIR`: Stammordner der ADC-Vorlagen (`alteon` und `netscaler`)
 - `ENVIRONMENTS_DIR`: Ablageort der Umgebungen
 - `GIT_GROUP_URL`: GitLab-Gruppe fuer Umgebungs-Repositories
 - `TERRAFORM_TARGET_BRANCH`: aktueller Zielbranch, `develop` oder `master`
 - `ACTIVE_ENVIRONMENT`: aktuell ausgewaehlte Umgebung
+- `ALTEON_USE_LINUXENV`: Alteon-Zugangsdaten vor Terraform-Aufrufen abfragen
+- `NETSCALER_USE_LINUXENV`: NetScaler-Zugangsdaten vor Terraform-Aufrufen abfragen
+
+Beim Erstellen einer Umgebung wird der ADC-Typ ausgewaehlt. Das Alteon-Template
+verwendet `Radware/alteon`, das NetScaler-Template `citrix/citrixadc`. Fuer
+NetScaler muss `netscaler_endpoint` beispielsweise in einer `terraform.tfvars`
+oder als `TF_VAR_netscaler_endpoint` gesetzt werden. Passwoerter werden nicht in
+der Konfigurationsdatei gespeichert.
 
 ## Terraform-Hinweis
 

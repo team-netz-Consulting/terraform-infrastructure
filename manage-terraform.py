@@ -6,10 +6,11 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
-# Version: 0.2.8
-# Build:   20260813-003
+# Version: 0.3.0
+# Build:   20260828-001
 # Changes:
-#   - Warnung vor Aenderungen in der Terraform-Shell wird im Master-Branch rot dargestellt.
+#   - Auswahl zwischen Alteon- und NetScaler-Templates beim Erstellen ergaenzt.
+#   - Providerabhaengige Anmeldedaten fuer Terraform-Umgebungen eingefuehrt.
 #
 # Version: 0.2.7
 # Build:   20260813-002
@@ -86,10 +87,11 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.2.8"
-SCRIPT_BUILD = "20260813-003"
+SCRIPT_VERSION = "0.3.0"
+SCRIPT_BUILD = "20260828-001"
 SCRIPT_CHANGELOG = (
-    "Warnung vor Aenderungen in der Terraform-Shell wird im Master-Branch rot dargestellt.",
+    "Auswahl zwischen Alteon- und NetScaler-Templates beim Erstellen ergaenzt.",
+    "Providerabhaengige Anmeldedaten fuer Terraform-Umgebungen eingefuehrt.",
 )
 
 
@@ -110,6 +112,7 @@ class TerraformManager:
         )
         self.askpass_script: Optional[Path] = None
         self.alteon_credentials_set = False
+        self.netscaler_credentials_set = False
         self.config: Dict[str, str] = {}
 
         atexit.register(self.cleanup_git_askpass)
@@ -138,6 +141,8 @@ class TerraformManager:
             "TERRAFORM_TARGET_BRANCH": "develop",
             "ALTEON_USE_LINUXENV": "false",
             "ALTEON_USERNAME": "",
+            "NETSCALER_USE_LINUXENV": "false",
+            "NETSCALER_USERNAME": "",
         }
 
     def create_default_config(self) -> None:
@@ -179,6 +184,8 @@ class TerraformManager:
         cfg["TERRAFORM_TARGET_BRANCH"] = cfg.get("TERRAFORM_TARGET_BRANCH", "develop") or "develop"
         cfg["ALTEON_USE_LINUXENV"] = cfg.get("ALTEON_USE_LINUXENV", "false") or "false"
         cfg["ALTEON_USERNAME"] = cfg.get("ALTEON_USERNAME", "") or ""
+        cfg["NETSCALER_USE_LINUXENV"] = cfg.get("NETSCALER_USE_LINUXENV", "false") or "false"
+        cfg["NETSCALER_USERNAME"] = cfg.get("NETSCALER_USERNAME", "") or ""
 
         if cfg["TERRAFORM_TARGET_BRANCH"] not in ("develop", "master"):
             cfg["TERRAFORM_TARGET_BRANCH"] = "develop"
@@ -297,6 +304,8 @@ class TerraformManager:
             "TERRAFORM_TARGET_BRANCH",
             "ALTEON_USE_LINUXENV",
             "ALTEON_USERNAME",
+            "NETSCALER_USE_LINUXENV",
+            "NETSCALER_USERNAME",
         ]
 
         lines = ["# Grundkonfiguration fuer manage-terraform.py"]
@@ -437,8 +446,22 @@ class TerraformManager:
     def validate_environment_name(name: str) -> bool:
         return bool(re.match(r"^[A-Za-z0-9._-]+$", name))
 
-    def copy_template_files(self, target_dir: Path) -> None:
+    def get_template_variants(self) -> List[Tuple[str, str, Path]]:
         template_dir = Path(self.config["TEMPLATE_DIR"])
+        variants = []
+        for key, label in (("alteon", "Alteon ADC"), ("netscaler", "NetScaler ADC")):
+            variant_dir = template_dir / key
+            if variant_dir.is_dir():
+                variants.append((key, label, variant_dir))
+
+        # Kompatibilitaet mit bisherigen Installationen, deren Dateien direkt
+        # in TEMPLATE_DIR liegen.
+        if not variants and any(template_dir.glob("*.tf")):
+            variants.append(("alteon", "Alteon ADC", template_dir))
+        return variants
+
+    def copy_template_files(self, target_dir: Path, template_dir: Optional[Path] = None) -> None:
+        template_dir = template_dir or Path(self.config["TEMPLATE_DIR"])
         target_dir.mkdir(parents=True, exist_ok=True)
         for item in template_dir.iterdir():
             destination = target_dir / item.name
@@ -686,6 +709,24 @@ class TerraformManager:
             self.run_git(["--version"], capture=True, check=True)
             return True
         except Exception:
+            return False
+
+    def is_git_repository_root(self, directory: Path) -> bool:
+        """Return true only when directory itself owns the Git repository.
+
+        ``rev-parse --is-inside-work-tree`` also succeeds for directories below
+        a parent repository. Environment directories need an independent
+        repository, otherwise the parent's .gitignore rules are applied.
+        """
+        try:
+            result = self.run_git(
+                ["rev-parse", "--show-toplevel"],
+                cwd=directory,
+                capture=True,
+            )
+            repository_root = Path(result.stdout.strip()).resolve()
+            return repository_root == directory.resolve()
+        except (OSError, RuntimeError):
             return False
 
     def configure_gitlab_login_for_session(self) -> None:
@@ -952,9 +993,7 @@ class TerraformManager:
             print(f"Remote-Projekt konnte nicht angelegt werden. Lokale Umgebung bleibt bestehen: {target_dir}")
             return False
 
-        try:
-            self.run_git(["rev-parse", "--is-inside-work-tree"], cwd=target_dir, capture=True)
-        except Exception:
+        if not self.is_git_repository_root(target_dir):
             try:
                 self.run_git(["init", "--initial-branch", self.config["MASTER_BRANCH"]], cwd=target_dir)
             except Exception:
@@ -1711,7 +1750,7 @@ class TerraformManager:
             self.pause()
             return
 
-        if not self.ensure_alteon_linuxenv_variables():
+        if not self.ensure_provider_linuxenv_variables():
             return
 
         env_path = self.ensure_active_environment_path()
@@ -1743,7 +1782,7 @@ class TerraformManager:
         self.print_heading("Shell mit Terraform-Umgebungsvariablen oeffnen")
         print()
 
-        if not self.ensure_alteon_linuxenv_variables():
+        if not self.ensure_provider_linuxenv_variables():
             return
 
         env_path = self.ensure_active_environment_path()
@@ -1840,8 +1879,65 @@ class TerraformManager:
         self.alteon_credentials_set = True
         return True
 
+    def detect_active_environment_provider(self) -> Optional[str]:
+        env_path = self.ensure_active_environment_path()
+        if env_path is None:
+            return None
+        provider_files = list(env_path.glob("*.tf"))
+        content = "\n".join(
+            path.read_text(encoding="utf-8", errors="ignore") for path in provider_files
+        )
+        if re.search(r'provider\s+"citrixadc"|source\s*=\s*"citrix/citrixadc"', content):
+            return "netscaler"
+        if re.search(r'provider\s+"alteon"|source\s*=\s*"Radware/alteon"', content):
+            return "alteon"
+        return None
+
+    def ensure_netscaler_linuxenv_variables(self) -> bool:
+        if not self.config_value_is_true(self.config.get("NETSCALER_USE_LINUXENV", "false")):
+            return True
+        if (
+            self.netscaler_credentials_set
+            and os.environ.get("TF_VAR_netscaler_username")
+            and os.environ.get("TF_VAR_netscaler_password")
+        ):
+            return True
+
+        self.print_header()
+        self.print_heading("NetScaler Anmeldedaten")
+        print()
+        current_username = self.config.get("NETSCALER_USERNAME", "").strip()
+        prompt = f"NetScaler Username [{current_username}]: " if current_username else "NetScaler Username: "
+        try:
+            username = input(prompt).strip() or current_username
+            password = getpass.getpass("NetScaler Passwort: ")
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("Eingabe abgebrochen.")
+            self.pause()
+            return False
+        if not username or not password:
+            print("NetScaler Username und Passwort duerfen nicht leer sein.")
+            self.pause()
+            return False
+        if username != current_username:
+            self.config["NETSCALER_USERNAME"] = username
+            self.save_config()
+        os.environ["TF_VAR_netscaler_username"] = username
+        os.environ["TF_VAR_netscaler_password"] = password
+        self.netscaler_credentials_set = True
+        return True
+
+    def ensure_provider_linuxenv_variables(self) -> bool:
+        provider = self.detect_active_environment_provider()
+        if provider == "netscaler":
+            return self.ensure_netscaler_linuxenv_variables()
+        if provider == "alteon":
+            return self.ensure_alteon_linuxenv_variables()
+        return True
+
     def show_terraform_menu(self) -> None:
-        if not self.ensure_alteon_linuxenv_variables():
+        if not self.ensure_provider_linuxenv_variables():
             return
 
         while True:
@@ -1899,6 +1995,30 @@ class TerraformManager:
             self.pause()
             return
 
+        variants = self.get_template_variants()
+        if not variants:
+            print(f"Keine Terraform-Templates gefunden unter: {template_dir}")
+            self.pause()
+            return
+
+        self.print_heading("ADC-Typ auswaehlen:")
+        for idx, (_, label, _) in enumerate(variants, start=1):
+            print(f"  {idx}) {label}")
+        print("  0) Abbrechen")
+        print()
+        selected_raw = input("Auswahl: ").strip()
+        if selected_raw == "0":
+            print("Erstellung abgebrochen.")
+            self.pause()
+            return
+        if not selected_raw.isdigit() or not 1 <= int(selected_raw) <= len(variants):
+            print("Ungueltige Auswahl.")
+            self.pause()
+            return
+        _, template_label, selected_template_dir = variants[int(selected_raw) - 1]
+        print(f"Template: {template_label}")
+        print()
+
         environment_name = input("Name der neuen Umgebung: ").strip()
         if not environment_name:
             print("Kein Umgebungsname angegeben.")
@@ -1918,15 +2038,22 @@ class TerraformManager:
             self.pause()
             return
 
-        self.copy_template_files(target_dir)
-        print(f"Umgebung wurde erstellt: {target_dir}")
+        self.copy_template_files(target_dir, selected_template_dir)
+        print(f"Umgebung wurde erstellt: {target_dir} ({template_label})")
 
         print()
         print("Verbinde Umgebung mit Git...")
-        if self.ensure_environment_git_repository(environment_name, target_dir):
+        try:
+            git_connected = self.ensure_environment_git_repository(environment_name, target_dir)
+        except Exception as exc:
+            git_connected = False
+            print("Git-Anbindung konnte nicht vollstaendig abgeschlossen werden.")
+            print(str(exc))
+
+        if git_connected:
             print(f"Git-Repository wurde verbunden: {self.get_environment_git_remote_url(environment_name)}")
         else:
-            print("Git-Anbindung konnte nicht vollstaendig abgeschlossen werden.")
+            print(f"Die lokale Umgebung bleibt erhalten: {target_dir}")
 
         self.pause()
 
