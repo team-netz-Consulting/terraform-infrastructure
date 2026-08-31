@@ -6,10 +6,10 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
-# Version: 0.3.1
-# Build:   20260831-001
+# Version: 0.3.3
+# Build:   20260831-003
 # Changes:
-#   - Hauptprojekt-Remote von den GitLab-Remotes der Umgebungen getrennt.
+#   - NetScaler-Anmeldedaten werden standardmaessig wie bei Alteon abgefragt.
 #
 # Version: 0.2.7
 # Build:   20260813-002
@@ -86,10 +86,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.3.1"
-SCRIPT_BUILD = "20260831-001"
+SCRIPT_VERSION = "0.3.3"
+SCRIPT_BUILD = "20260831-003"
 SCRIPT_CHANGELOG = (
-    "Hauptprojekt-Remote von den GitLab-Remotes der Umgebungen getrennt.",
+    "NetScaler-Anmeldedaten werden standardmaessig wie bei Alteon abgefragt.",
 )
 
 
@@ -139,7 +139,7 @@ class TerraformManager:
             "TERRAFORM_TARGET_BRANCH": "develop",
             "ALTEON_USE_LINUXENV": "false",
             "ALTEON_USERNAME": "",
-            "NETSCALER_USE_LINUXENV": "false",
+            "NETSCALER_USE_LINUXENV": "true",
             "NETSCALER_USERNAME": "",
         }
 
@@ -185,7 +185,7 @@ class TerraformManager:
         cfg["TERRAFORM_TARGET_BRANCH"] = cfg.get("TERRAFORM_TARGET_BRANCH", "develop") or "develop"
         cfg["ALTEON_USE_LINUXENV"] = cfg.get("ALTEON_USE_LINUXENV", "false") or "false"
         cfg["ALTEON_USERNAME"] = cfg.get("ALTEON_USERNAME", "") or ""
-        cfg["NETSCALER_USE_LINUXENV"] = cfg.get("NETSCALER_USE_LINUXENV", "false") or "false"
+        cfg["NETSCALER_USE_LINUXENV"] = cfg.get("NETSCALER_USE_LINUXENV", "true") or "true"
         cfg["NETSCALER_USERNAME"] = cfg.get("NETSCALER_USERNAME", "") or ""
 
         if cfg["TERRAFORM_TARGET_BRANCH"] not in ("develop", "master"):
@@ -1032,6 +1032,19 @@ class TerraformManager:
 
         self.run_git(["branch", "-M", self.config["MASTER_BRANCH"]], cwd=target_dir)
         self.run_git(["push", "-u", remote_name, self.config["MASTER_BRANCH"]], cwd=target_dir, auth=True)
+
+        develop_branch = self.config["DEVELOP_BRANCH"]
+        master_branch = self.config["MASTER_BRANCH"]
+        if develop_branch != master_branch:
+            self.run_git(
+                ["checkout", "-b", develop_branch, master_branch],
+                cwd=target_dir,
+            )
+            self.run_git(
+                ["push", "-u", remote_name, develop_branch],
+                cwd=target_dir,
+                auth=True,
+            )
         return True
 
     def ensure_git_repository(self) -> bool:

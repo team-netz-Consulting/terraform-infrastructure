@@ -66,6 +66,10 @@ NetScaler muss `netscaler_endpoint` beispielsweise in einer `terraform.tfvars`
 oder als `TF_VAR_netscaler_endpoint` gesetzt werden. Passwoerter werden nicht in
 der Konfigurationsdatei gespeichert.
 
+Neue Environment-Repositories erhalten automatisch einen initialen `master`-
+Branch und einen davon abgeleiteten `develop`-Branch. Beide Branches werden zum
+Environment-Remote gepusht; anschließend bleibt `develop` lokal ausgecheckt.
+
 ## Terraform-Hinweis
 
 Terraform State sollte nicht direkt in diesem Repository verwaltet werden. Fuer produktive Nutzung wird ein Remote Backend mit Locking und Versionierung empfohlen. Weitere Hinweise stehen in `HowTo-Terraform.md`.
