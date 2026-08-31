@@ -54,6 +54,7 @@ Die wichtigsten Einstellungen liegen in `manage-terraform.conf`, unter anderem:
 - `TEMPLATE_DIR`: Stammordner der ADC-Vorlagen (`alteon` und `netscaler`)
 - `ENVIRONMENTS_DIR`: Ablageort der Umgebungen
 - `GIT_GROUP_URL`: GitLab-Gruppe fuer Umgebungs-Repositories
+- `GIT_REMOTE_URL`: separates Git-Remote des Hauptprojekts (GitHub)
 - `TERRAFORM_TARGET_BRANCH`: aktueller Zielbranch, `develop` oder `master`
 - `ACTIVE_ENVIRONMENT`: aktuell ausgewaehlte Umgebung
 - `ALTEON_USE_LINUXENV`: Alteon-Zugangsdaten vor Terraform-Aufrufen abfragen

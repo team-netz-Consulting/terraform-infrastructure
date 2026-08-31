@@ -6,11 +6,10 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
-# Version: 0.3.0
-# Build:   20260828-001
+# Version: 0.3.1
+# Build:   20260831-001
 # Changes:
-#   - Auswahl zwischen Alteon- und NetScaler-Templates beim Erstellen ergaenzt.
-#   - Providerabhaengige Anmeldedaten fuer Terraform-Umgebungen eingefuehrt.
+#   - Hauptprojekt-Remote von den GitLab-Remotes der Umgebungen getrennt.
 #
 # Version: 0.2.7
 # Build:   20260813-002
@@ -87,11 +86,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.3.0"
-SCRIPT_BUILD = "20260828-001"
+SCRIPT_VERSION = "0.3.1"
+SCRIPT_BUILD = "20260831-001"
 SCRIPT_CHANGELOG = (
-    "Auswahl zwischen Alteon- und NetScaler-Templates beim Erstellen ergaenzt.",
-    "Providerabhaengige Anmeldedaten fuer Terraform-Umgebungen eingefuehrt.",
+    "Hauptprojekt-Remote von den GitLab-Remotes der Umgebungen getrennt.",
 )
 
 
@@ -128,7 +126,7 @@ class TerraformManager:
             "DEVELOP_BRANCH": "develop",
             "GIT_REMOTE_NAME": "origin",
             "GIT_GROUP_URL": "https://gitlab.team-netz.net/team-netz",
-            "GIT_REMOTE_URL": "",
+            "GIT_REMOTE_URL": "https://github.com/team-netz-Consulting/terraform-infrastructure.git",
             "GIT_USERNAME": "",
             "GIT_PASSWORD": "",
             "GIT_ACCESS_TOKEN": "",
@@ -171,7 +169,10 @@ class TerraformManager:
         cfg["DEVELOP_BRANCH"] = cfg.get("DEVELOP_BRANCH", "develop") or "develop"
         cfg["GIT_REMOTE_NAME"] = cfg.get("GIT_REMOTE_NAME", "origin") or "origin"
         cfg["GIT_GROUP_URL"] = cfg.get("GIT_GROUP_URL", "https://gitlab.team-netz.net/team-netz") or "https://gitlab.team-netz.net/team-netz"
-        cfg["GIT_REMOTE_URL"] = cfg.get("GIT_REMOTE_URL", "") or ""
+        cfg["GIT_REMOTE_URL"] = cfg.get(
+            "GIT_REMOTE_URL",
+            "https://github.com/team-netz-Consulting/terraform-infrastructure.git",
+        ) or ""
         cfg["GIT_USERNAME"] = cfg.get("GIT_USERNAME", "") or ""
         cfg["GIT_PASSWORD"] = cfg.get("GIT_PASSWORD", "") or ""
         cfg["GIT_ACCESS_TOKEN"] = cfg.get("GIT_ACCESS_TOKEN", "") or ""
@@ -223,6 +224,8 @@ class TerraformManager:
 
         if not parse.urlsplit(self.config["GIT_GROUP_URL"]).scheme:
             errors.append(f"GIT_GROUP_URL ist keine gueltige URL: {self.config['GIT_GROUP_URL']}")
+        if self.config["GIT_REMOTE_URL"] and not parse.urlsplit(self.config["GIT_REMOTE_URL"]).scheme:
+            errors.append(f"GIT_REMOTE_URL ist keine gueltige URL: {self.config['GIT_REMOTE_URL']}")
 
         if self.config["ENVIRONMENT_FOLDER_STRUCTURE"] not in ("single", "master_develop"):
             errors.append("ENVIRONMENT_FOLDER_STRUCTURE muss 'single' oder 'master_develop' sein.")
@@ -471,10 +474,9 @@ class TerraformManager:
                 shutil.copy2(item, destination)
 
     def get_git_remote_url(self) -> str:
-        if self.config["GIT_REMOTE_URL"]:
-            return self.config["GIT_REMOTE_URL"]
-        project_name = Path(self.config["ROOT_DIR"]).name
-        return f'{self.config["GIT_GROUP_URL"].rstrip("/")}/{project_name}.git'
+        # Das Hauptprojekt hat ein eigenes Remote. GIT_GROUP_URL darf hier
+        # nicht als Fallback dienen; es gehoert ausschliesslich zu Umgebungen.
+        return self.config["GIT_REMOTE_URL"]
 
     def get_environment_git_remote_url(self, environment_name: str) -> str:
         return f'{self.config["GIT_GROUP_URL"].rstrip("/")}/{environment_name}.git'
@@ -1043,16 +1045,24 @@ class TerraformManager:
 
     def ensure_git_remote(self) -> bool:
         remote_name = self.config["GIT_REMOTE_NAME"]
+        remote_url = self.get_git_remote_url()
+        if not remote_url:
+            print("Kein Git-Remote fuer das Hauptprojekt konfiguriert (GIT_REMOTE_URL).")
+            return False
         try:
-            self.run_git(["remote", "get-url", remote_name], cwd=Path(self.config["ROOT_DIR"]), capture=True)
-            return True
+            current_url = self.run_git(
+                ["remote", "get-url", remote_name],
+                cwd=Path(self.config["ROOT_DIR"]),
+                capture=True,
+            ).stdout.strip()
+            if current_url != remote_url:
+                self.run_git(
+                    ["remote", "set-url", remote_name, remote_url],
+                    cwd=Path(self.config["ROOT_DIR"]),
+                )
         except Exception:
-            remote_url = self.get_git_remote_url()
-            if not remote_url:
-                print("Kein Git-Remote konfiguriert.")
-                return False
             self.run_git(["remote", "add", remote_name, remote_url], cwd=Path(self.config["ROOT_DIR"]))
-            return True
+        return True
 
     def checkout_git_branch(self, branch_name: str) -> None:
         root = Path(self.config["ROOT_DIR"])
