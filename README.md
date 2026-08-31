@@ -53,12 +53,19 @@ Die wichtigsten Einstellungen liegen in `manage-terraform.conf`, unter anderem:
 - `ROOT_DIR`: Projektwurzel
 - `TEMPLATE_DIR`: Stammordner der ADC-Vorlagen (`alteon` und `netscaler`)
 - `ENVIRONMENTS_DIR`: Ablageort der Umgebungen
+- `UPDATE_CHECK_ENABLED`: lokale Updatepruefung beim Programmstart aktivieren
+- `UPDATE_SOURCE_DIR`: Quellordner einer neueren Programmversion
 - `GIT_GROUP_URL`: GitLab-Gruppe fuer Umgebungs-Repositories
 - `GIT_REMOTE_URL`: separates Git-Remote des Hauptprojekts (GitHub)
 - `TERRAFORM_TARGET_BRANCH`: aktueller Zielbranch, `develop` oder `master`
 - `ACTIVE_ENVIRONMENT`: aktuell ausgewaehlte Umgebung
 - `ALTEON_USE_LINUXENV`: Alteon-Zugangsdaten vor Terraform-Aufrufen abfragen
 - `NETSCALER_USE_LINUXENV`: NetScaler-Zugangsdaten vor Terraform-Aufrufen abfragen
+
+Ist `UPDATE_SOURCE_DIR` gesetzt, vergleicht das Programm beim Start die dortige
+`SCRIPT_VERSION` und `SCRIPT_BUILD` mit der installierten Version. Eine neuere
+Version wird nur nach Bestaetigung uebernommen. `manage-terraform.conf` und
+`environments/` werden dabei nicht ueberschrieben.
 
 Beim Erstellen einer Umgebung wird der ADC-Typ ausgewaehlt. Das Alteon-Template
 verwendet `Radware/alteon`, das NetScaler-Template `citrix/citrixadc`. Fuer

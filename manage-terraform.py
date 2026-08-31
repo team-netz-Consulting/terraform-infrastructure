@@ -6,10 +6,10 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
-# Version: 0.3.3
-# Build:   20260831-003
+# Version: 0.3.4
+# Build:   20260831-004
 # Changes:
-#   - NetScaler-Anmeldedaten werden standardmaessig wie bei Alteon abgefragt.
+#   - Konfigurierbare lokale Updatequelle und Versionspruefung beim Start.
 #
 # Version: 0.2.7
 # Build:   20260813-002
@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import ast
 import base64
 import getpass
 import json
@@ -86,10 +87,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.3.3"
-SCRIPT_BUILD = "20260831-003"
+SCRIPT_VERSION = "0.3.4"
+SCRIPT_BUILD = "20260831-004"
 SCRIPT_CHANGELOG = (
-    "NetScaler-Anmeldedaten werden standardmaessig wie bei Alteon abgefragt.",
+    "Konfigurierbare lokale Updatequelle und Versionspruefung beim Start.",
 )
 
 
@@ -121,6 +122,8 @@ class TerraformManager:
             "ROOT_DIR": root_dir,
             "TEMPLATE_DIR": "${ROOT_DIR}/template",
             "ENVIRONMENTS_DIR": "${ROOT_DIR}/environments",
+            "UPDATE_CHECK_ENABLED": "true",
+            "UPDATE_SOURCE_DIR": "",
             "ENVIRONMENT_FOLDER_STRUCTURE": "master_develop",
             "MASTER_BRANCH": "master",
             "DEVELOP_BRANCH": "develop",
@@ -164,6 +167,8 @@ class TerraformManager:
         cfg["ROOT_DIR"] = cfg.get("ROOT_DIR", str(self.script_dir)) or str(self.script_dir)
         cfg["TEMPLATE_DIR"] = cfg.get("TEMPLATE_DIR", f'{cfg["ROOT_DIR"]}/template') or f'{cfg["ROOT_DIR"]}/template'
         cfg["ENVIRONMENTS_DIR"] = cfg.get("ENVIRONMENTS_DIR", f'{cfg["ROOT_DIR"]}/environments') or f'{cfg["ROOT_DIR"]}/environments'
+        cfg["UPDATE_CHECK_ENABLED"] = cfg.get("UPDATE_CHECK_ENABLED", "true") or "true"
+        cfg["UPDATE_SOURCE_DIR"] = cfg.get("UPDATE_SOURCE_DIR", "") or ""
         cfg["ENVIRONMENT_FOLDER_STRUCTURE"] = cfg.get("ENVIRONMENT_FOLDER_STRUCTURE", "master_develop") or "master_develop"
         cfg["MASTER_BRANCH"] = cfg.get("MASTER_BRANCH", "master") or "master"
         cfg["DEVELOP_BRANCH"] = cfg.get("DEVELOP_BRANCH", "develop") or "develop"
@@ -289,6 +294,8 @@ class TerraformManager:
             "ROOT_DIR",
             "TEMPLATE_DIR",
             "ENVIRONMENTS_DIR",
+            "UPDATE_CHECK_ENABLED",
+            "UPDATE_SOURCE_DIR",
             "ENVIRONMENT_FOLDER_STRUCTURE",
             "MASTER_BRANCH",
             "DEVELOP_BRANCH",
@@ -323,6 +330,132 @@ class TerraformManager:
             input("Weiter mit Enter...")
         except EOFError:
             pass
+
+    @staticmethod
+    def read_script_release(script_path: Path) -> Tuple[str, str]:
+        content = script_path.read_text(encoding="utf-8")
+        version = re.search(
+            r'^SCRIPT_VERSION\s*=\s*"([0-9]+(?:\.[0-9]+)*)"\s*$',
+            content,
+            re.MULTILINE,
+        )
+        build = re.search(
+            r'^SCRIPT_BUILD\s*=\s*"([0-9]{8}-[0-9]+)"\s*$',
+            content,
+            re.MULTILINE,
+        )
+        if not version or not build:
+            raise ValueError("SCRIPT_VERSION oder SCRIPT_BUILD fehlt oder ist ungueltig.")
+        return version.group(1), build.group(1)
+
+    @staticmethod
+    def release_is_newer(candidate: Tuple[str, str], current: Tuple[str, str]) -> bool:
+        candidate_version = tuple(int(part) for part in candidate[0].split("."))
+        current_version = tuple(int(part) for part in current[0].split("."))
+        width = max(len(candidate_version), len(current_version))
+        candidate_version += (0,) * (width - len(candidate_version))
+        current_version += (0,) * (width - len(current_version))
+        if candidate_version != current_version:
+            return candidate_version > current_version
+
+        candidate_date, candidate_number = candidate[1].split("-", 1)
+        current_date, current_number = current[1].split("-", 1)
+        return (candidate_date, int(candidate_number)) > (current_date, int(current_number))
+
+    def apply_local_update(self, source_dir: Path) -> None:
+        managed_paths = (
+            "manage-terraform.py",
+            "manage-terraform.sh",
+            "README.md",
+            "HowTo-Terraform.md",
+            "template",
+        )
+        staging_dir = Path(tempfile.mkdtemp(prefix=".terraform-manager-update-", dir=self.script_dir))
+        backup_dir = Path(tempfile.mkdtemp(prefix="terraform-manager-backup-"))
+        updated: List[str] = []
+        try:
+            for relative_name in managed_paths:
+                source = source_dir / relative_name
+                if not source.exists():
+                    continue
+                if source.is_symlink():
+                    raise RuntimeError(f"Symbolische Links sind in Updates nicht erlaubt: {source}")
+                staged = staging_dir / relative_name
+                if source.is_dir():
+                    shutil.copytree(source, staged)
+                else:
+                    staged.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, staged)
+
+            candidate_script = staging_dir / "manage-terraform.py"
+            if not candidate_script.is_file():
+                raise RuntimeError("Update enthaelt keine manage-terraform.py.")
+            ast.parse(candidate_script.read_text(encoding="utf-8"))
+
+            for relative_name in managed_paths:
+                staged = staging_dir / relative_name
+                if not staged.exists():
+                    continue
+                destination = self.script_dir / relative_name
+                backup = backup_dir / relative_name
+                if destination.exists():
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(destination), str(backup))
+                updated.append(relative_name)
+                shutil.move(str(staged), str(destination))
+        except Exception:
+            for relative_name in reversed(updated):
+                destination = self.script_dir / relative_name
+                backup = backup_dir / relative_name
+                if destination.is_dir():
+                    shutil.rmtree(destination)
+                elif destination.exists():
+                    destination.unlink()
+                if backup.exists():
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(backup), str(destination))
+            raise
+        finally:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            shutil.rmtree(backup_dir, ignore_errors=True)
+
+    def check_for_local_update(self) -> None:
+        if not self.config_value_is_true(self.config.get("UPDATE_CHECK_ENABLED", "true")):
+            return
+        configured_source = self.config.get("UPDATE_SOURCE_DIR", "").strip()
+        if not configured_source:
+            return
+
+        source_dir = Path(configured_source).expanduser().resolve()
+        candidate_script = source_dir / "manage-terraform.py"
+        if not candidate_script.is_file():
+            print(f"Updatequelle ist ungueltig: {candidate_script}")
+            return
+        try:
+            candidate = self.read_script_release(candidate_script)
+        except (OSError, ValueError) as exc:
+            print(f"Updateversion konnte nicht gelesen werden: {exc}")
+            return
+
+        current = (SCRIPT_VERSION, SCRIPT_BUILD)
+        if not self.release_is_newer(candidate, current):
+            return
+
+        print("Update vorhanden")
+        print(f"Installiert: {current[0]} ({current[1]})")
+        print(f"Verfuegbar:  {candidate[0]} ({candidate[1]})")
+        print(f"Quelle:      {source_dir}")
+        print()
+        if input("Update jetzt anwenden? [ja/NEIN] ").strip().lower() != "ja":
+            print("Update wurde nicht angewendet.")
+            return
+        try:
+            self.apply_local_update(source_dir)
+        except Exception as exc:
+            print(f"Update fehlgeschlagen: {exc}")
+            return
+        print("Update wurde erfolgreich angewendet. Anwendung wird neu gestartet.")
+        os.execv(sys.executable, [sys.executable, *sys.argv])
 
     @staticmethod
     def bold_text(text: str) -> str:
@@ -2420,6 +2553,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parse_args(argv)
     manager = TerraformManager(args.config)
     manager.load_config()
+    manager.check_for_local_update()
     manager.show_menu()
     return 0
 
