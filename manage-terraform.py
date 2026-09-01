@@ -6,10 +6,10 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
 # Versionshistorie
 # -----------------------------------------------------------------------------
-# Version: 0.3.4
-# Build:   20260831-004
+# Version: 0.3.5
+# Build:   20260901-001
 # Changes:
-#   - Konfigurierbare lokale Updatequelle und Versionspruefung beim Start.
+#   - Robustes Loeschen von Umgebungen mit fremden Terraform-Dateirechten.
 #
 # Version: 0.2.7
 # Build:   20260813-002
@@ -78,6 +78,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -87,10 +88,10 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.3.4"
-SCRIPT_BUILD = "20260831-004"
+SCRIPT_VERSION = "0.3.5"
+SCRIPT_BUILD = "20260901-001"
 SCRIPT_CHANGELOG = (
-    "Konfigurierbare lokale Updatequelle und Versionspruefung beim Start.",
+    "Robustes Loeschen von Umgebungen mit fremden Terraform-Dateirechten.",
 )
 
 
@@ -2217,6 +2218,59 @@ class TerraformManager:
         status = self.run_git(["status", "--porcelain"], cwd=repo_dir, capture=True)
         return bool(status.stdout.strip())
 
+    def remove_environment_directory(self, target_dir: Path) -> bool:
+        environments_root = self.get_environment_root().resolve()
+        resolved_target = target_dir.resolve()
+        try:
+            relative_target = resolved_target.relative_to(environments_root)
+        except ValueError:
+            print(f"Loeschen verweigert: Pfad liegt ausserhalb von {environments_root}")
+            return False
+        if not relative_target.parts:
+            print("Loeschen des gesamten Environments-Stammordners ist nicht erlaubt.")
+            return False
+
+        def make_writable_and_retry(function, path: str, exc_info) -> None:
+            try:
+                parent = Path(path).parent
+                parent_mode = os.stat(parent, follow_symlinks=False).st_mode
+                os.chmod(parent, parent_mode | stat.S_IWUSR | stat.S_IXUSR, follow_symlinks=False)
+                current_mode = os.stat(path, follow_symlinks=False).st_mode
+                os.chmod(path, current_mode | stat.S_IWUSR | stat.S_IXUSR, follow_symlinks=False)
+                function(path)
+            except OSError:
+                raise exc_info[1]
+
+        try:
+            shutil.rmtree(resolved_target, onerror=make_writable_and_retry)
+            return True
+        except PermissionError as exc:
+            print(f"Umgebung konnte wegen fehlender Dateirechte nicht geloescht werden: {exc.filename}")
+        except OSError as exc:
+            print(f"Umgebung konnte nicht geloescht werden: {exc}")
+            return False
+
+        if os.name == "nt" or shutil.which("sudo") is None:
+            print("Bitte Eigentümer/Rechte der Dateien korrigieren und erneut versuchen.")
+            return False
+
+        print("Einige Dateien wurden von einem anderen Benutzer erzeugt.")
+        try:
+            confirm = input("Loeschen dieser Umgebung mit sudo wiederholen? [ja/NEIN] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("Loeschen abgebrochen.")
+            return False
+        if confirm != "ja":
+            print("Loeschen abgebrochen.")
+            return False
+
+        result = subprocess.run(["sudo", "rm", "-rf", "--", str(resolved_target)], text=True)
+        if result.returncode != 0 or resolved_target.exists():
+            print("Loeschen mit sudo ist fehlgeschlagen.")
+            return False
+        return True
+
     def delete_environment(self) -> None:
         self.print_header()
         self.print_heading("Bestehende Umgebung loeschen")
@@ -2282,7 +2336,9 @@ class TerraformManager:
                 except Exception:
                     pass
 
-            shutil.rmtree(target_dir)
+            if not self.remove_environment_directory(target_dir):
+                self.pause()
+                return
             print(f"Umgebung wurde geloescht: {target_dir}")
             if self.config.get("ACTIVE_ENVIRONMENT") == selected_environment:
                 self.config["ACTIVE_ENVIRONMENT"] = ""
@@ -2355,10 +2411,14 @@ class TerraformManager:
             return
 
         if delete_all_branches:
-            shutil.rmtree(environment_base_dir)
+            if not self.remove_environment_directory(environment_base_dir):
+                self.pause()
+                return
             print(f"Umgebung wurde vollstaendig geloescht: {environment_base_dir}")
         else:
-            shutil.rmtree(target_dir)
+            if not self.remove_environment_directory(target_dir):
+                self.pause()
+                return
             if environment_base_dir.exists() and not any(environment_base_dir.iterdir()):
                 environment_base_dir.rmdir()
             print(f"Umgebung wurde geloescht: {target_dir}")
