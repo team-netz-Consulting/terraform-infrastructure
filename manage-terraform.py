@@ -88,10 +88,12 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.3.5"
-SCRIPT_BUILD = "20260901-001"
+SCRIPT_VERSION = "0.4.0"
+SCRIPT_BUILD = "20260907-002"
 SCRIPT_CHANGELOG = (
-    "Robustes Loeschen von Umgebungen mit fremden Terraform-Dateirechten.",
+    "Mehrere providerbezogene Terraform-Templates bei der Umgebungserstellung auswaehlbar.",
+    "GitLab-Subgroups beliebiger Tiefe und rekursive Projektlisten unterstuetzt.",
+    "CLI-Shell fuer Git- und providerabhaengige Terraform-Variablen ergaenzt.",
 )
 
 
@@ -237,7 +239,7 @@ class TerraformManager:
             errors.append("ENVIRONMENT_FOLDER_STRUCTURE muss 'single' oder 'master_develop' sein.")
 
         active_environment = self.config.get("ACTIVE_ENVIRONMENT", "").strip()
-        if active_environment and not self.validate_environment_name(active_environment):
+        if active_environment and not self.validate_environment_path(active_environment):
             errors.append(f"ACTIVE_ENVIRONMENT enthaelt ungueltige Zeichen: {active_environment}")
 
         if errors:
@@ -367,6 +369,7 @@ class TerraformManager:
         managed_paths = (
             "manage-terraform.py",
             "manage-terraform.sh",
+            "terraform-cli.sh",
             "README.md",
             "HowTo-Terraform.md",
             "template",
@@ -519,21 +522,38 @@ class TerraformManager:
             return self.get_environment_root() / environment_name
         return self.get_environment_root() / environment_name / self.get_selected_branch()
 
+    @staticmethod
+    def validate_environment_path(environment_path: str) -> bool:
+        path = Path(environment_path)
+        return bool(
+            environment_path
+            and not path.is_absolute()
+            and all(part not in ("", ".", "..") for part in path.parts)
+            and all(TerraformManager.validate_environment_name(part) for part in path.parts)
+        )
+
     def list_local_environments(self) -> List[str]:
         env_dir = self.get_environment_root()
         if not env_dir.is_dir():
             return []
 
-        environments: List[str] = []
+        environments: set[str] = set()
         selected_branch = self.get_selected_branch()
-        for candidate in sorted([p for p in env_dir.iterdir() if p.is_dir()], key=lambda p: p.name):
+        for git_marker in env_dir.rglob(".git"):
+            repo_dir = git_marker.parent
+            relative_repo = repo_dir.relative_to(env_dir)
             if self.use_single_environment_folder():
-                environments.append(candidate.name)
-                continue
-            branch_path = candidate / selected_branch
-            if branch_path.is_dir():
-                environments.append(candidate.name)
-        return environments
+                environments.add(relative_repo.as_posix())
+            elif repo_dir.name == selected_branch and relative_repo.parent.parts:
+                environments.add(relative_repo.parent.as_posix())
+
+        # Rueckwaertskompatibilitaet fuer lokal angelegte Umgebungen ohne Git.
+        for candidate in (p for p in env_dir.iterdir() if p.is_dir()):
+            if self.use_single_environment_folder() and any(candidate.glob("*.tf")):
+                environments.add(candidate.name)
+            elif (candidate / selected_branch).is_dir():
+                environments.add(candidate.name)
+        return sorted(environments)
 
     def resolve_environment_path_for_branch(self, environment_name: str) -> Path:
         branch_path = self.get_environment_branch_path(environment_name)
@@ -585,16 +605,27 @@ class TerraformManager:
 
     def get_template_variants(self) -> List[Tuple[str, str, Path]]:
         template_dir = Path(self.config["TEMPLATE_DIR"])
-        variants = []
-        for key, label in (("alteon", "Alteon ADC"), ("netscaler", "NetScaler ADC")):
-            variant_dir = template_dir / key
-            if variant_dir.is_dir():
-                variants.append((key, label, variant_dir))
+        variants: List[Tuple[str, str, Path]] = []
+        for provider in ("alteon", "netscaler"):
+            provider_dirs = [
+                path for path in template_dir.iterdir()
+                if path.is_dir()
+                and (path.name == provider or path.name.startswith(f"{provider}-"))
+                and any(path.glob("*.tf"))
+            ]
+            provider_dirs.sort(key=lambda path: (path.name != provider, path.name.lower()))
+            for variant_dir in provider_dirs:
+                label = (
+                    f"{variant_dir.name} (Standard)"
+                    if variant_dir.name == provider
+                    else variant_dir.name
+                )
+                variants.append((provider, label, variant_dir))
 
         # Kompatibilitaet mit bisherigen Installationen, deren Dateien direkt
         # in TEMPLATE_DIR liegen.
         if not variants and any(template_dir.glob("*.tf")):
-            variants.append(("alteon", "Alteon ADC", template_dir))
+            variants.append(("alteon", "alteon (Kompatibilitaet)", template_dir))
         return variants
 
     def copy_template_files(self, target_dir: Path, template_dir: Optional[Path] = None) -> None:
@@ -614,6 +645,22 @@ class TerraformManager:
 
     def get_environment_git_remote_url(self, environment_name: str) -> str:
         return f'{self.config["GIT_GROUP_URL"].rstrip("/")}/{environment_name}.git'
+
+    def get_relative_gitlab_project_path(self, path_with_namespace: str) -> Optional[str]:
+        group_path = self.get_gitlab_group_path().strip("/")
+        prefix = f"{group_path}/"
+        if not path_with_namespace.startswith(prefix):
+            return None
+        relative_path = path_with_namespace[len(prefix):]
+        return relative_path if self.validate_environment_path(relative_path) else None
+
+    def get_relative_gitlab_group_path(self, full_group_path: str) -> Optional[str]:
+        group_path = self.get_gitlab_group_path().strip("/")
+        prefix = f"{group_path}/"
+        if not full_group_path.startswith(prefix):
+            return None
+        relative_path = full_group_path[len(prefix):]
+        return relative_path if self.validate_environment_path(relative_path) else None
 
     def get_gitlab_api_url(self) -> str:
         if self.config["GITLAB_API_URL"]:
@@ -723,11 +770,67 @@ class TerraformManager:
             return payload
         return None
 
-    def create_gitlab_project(self, project_name: str) -> bool:
+    def list_gitlab_descendant_groups_data(self) -> Optional[List[dict]]:
+        if not self.ensure_gitlab_authentication_configured():
+            return None
+
+        encoded_group = parse.quote(self.get_gitlab_group_path(), safe="")
+        groups: List[dict] = []
+        page = 1
+        while True:
+            result = self.api_request(
+                f"/groups/{encoded_group}/descendant_groups",
+                params={"per_page": "100", "page": str(page), "order_by": "name", "sort": "asc"},
+            )
+            if result.status_code != 200:
+                return None
+            payload = self.parse_json(result.body)
+            if not isinstance(payload, list):
+                return None
+            page_groups = [item for item in payload if isinstance(item, dict)]
+            groups.extend(page_groups)
+            if len(payload) < 100:
+                return groups
+            page += 1
+
+    def select_gitlab_namespace(self, provider: str) -> Optional[dict]:
+        root_group = self.get_gitlab_group_response()
+        descendant_groups = self.list_gitlab_descendant_groups_data()
+        if not root_group or descendant_groups is None:
+            print("GitLab-Gruppen konnten nicht gelesen werden.")
+            return None
+
+        root_path = self.get_gitlab_group_path().strip("/")
+        provider_prefix = f"{root_path}/{provider}"
+        candidates = [
+            group for group in descendant_groups
+            if str(group.get("full_path", "")) == provider_prefix
+            or str(group.get("full_path", "")).startswith(f"{provider_prefix}/")
+        ]
+        if not candidates:
+            print(f"Keine vorhandene GitLab-Subgroup unter '{provider_prefix}' gefunden.")
+            return None
+
+        candidates.sort(key=lambda group: str(group.get("full_path", "")))
+        self.print_heading("GitLab-Zielgruppe auswaehlen:")
+        for idx, group in enumerate(candidates, start=1):
+            print(f"  {idx}) {group.get('full_path', 'unbekannt')}")
+        print("  0) Abbrechen")
+        print()
+        selected_raw = input("Auswahl: ").strip()
+        if not selected_raw.isdigit() or int(selected_raw) == 0:
+            return None
+        selected_index = int(selected_raw)
+        if selected_index < 1 or selected_index > len(candidates):
+            print("Ungueltige Auswahl.")
+            return None
+        return candidates[selected_index - 1]
+
+    def create_gitlab_project(self, project_name: str, namespace: Optional[dict] = None) -> bool:
         if not self.ensure_curl_available() or not self.ensure_gitlab_authentication_configured():
             return False
 
-        group_response = self.get_gitlab_group_response()
+        group_response = namespace or self.get_gitlab_group_response()
         if not group_response:
             print(f"GitLab-Gruppe konnte nicht gelesen werden: {self.get_gitlab_group_path()}")
             return False
@@ -964,17 +1067,30 @@ class TerraformManager:
             return None
 
         encoded_group = parse.quote(self.get_gitlab_group_path(), safe="")
-        result = self.api_request(
-            f"/groups/{encoded_group}/projects",
-            params={"per_page": "100", "order_by": "name", "sort": "asc"},
-        )
-        if result.status_code != 200:
-            return None
-
-        payload = self.parse_json(result.body)
-        if isinstance(payload, list):
-            return [item for item in payload if isinstance(item, dict)]
-        return None
+        projects: List[dict] = []
+        page = 1
+        while True:
+            result = self.api_request(
+                f"/groups/{encoded_group}/projects",
+                params={
+                    "include_subgroups": "true",
+                    "with_shared": "false",
+                    "per_page": "100",
+                    "page": str(page),
+                    "order_by": "name",
+                    "sort": "asc",
+                },
+            )
+            if result.status_code != 200:
+                return None
+            payload = self.parse_json(result.body)
+            if not isinstance(payload, list):
+                return None
+            page_projects = [item for item in payload if isinstance(item, dict)]
+            projects.extend(page_projects)
+            if len(payload) < 100:
+                return projects
+            page += 1
 
     def list_gitlab_projects(self) -> None:
         self.print_header()
@@ -1107,7 +1223,9 @@ class TerraformManager:
                 print("Ungueltige Auswahl.")
                 self.pause()
 
-    def create_gitlab_project_if_missing(self, project_name: str, remote_url: str) -> bool:
+    def create_gitlab_project_if_missing(
+        self, project_name: str, remote_url: str, namespace: Optional[dict] = None
+    ) -> bool:
         if self.config["GIT_CREATE_REMOTE_PROJECTS"].lower() != "true":
             return True
 
@@ -1116,16 +1234,21 @@ class TerraformManager:
             return True
         except Exception:
             print(f"GitLab-Projekt '{project_name}' existiert noch nicht oder ist nicht erreichbar.")
-            print(f"Lege Projekt in Gruppe '{self.get_gitlab_group_path()}' an...")
-            return self.create_gitlab_project(project_name)
+            namespace_path = str((namespace or {}).get("full_path", self.get_gitlab_group_path()))
+            print(f"Lege Projekt in Gruppe '{namespace_path}' an...")
+            return self.create_gitlab_project(project_name, namespace)
 
-    def ensure_environment_git_repository(self, environment_name: str, target_dir: Path) -> bool:
+    def ensure_environment_git_repository(
+        self, environment_name: str, target_dir: Path, namespace: Optional[dict] = None
+    ) -> bool:
         remote_url = self.get_environment_git_remote_url(environment_name)
         if not self.git_available():
             print("Git ist nicht installiert oder nicht im PATH. Umgebung wurde ohne Git erstellt.")
             return True
 
-        if not self.create_gitlab_project_if_missing(environment_name, remote_url):
+        if not self.create_gitlab_project_if_missing(
+            Path(environment_name).name, remote_url, namespace
+        ):
             print(f"Remote-Projekt konnte nicht angelegt werden. Lokale Umgebung bleibt bestehen: {target_dir}")
             return False
 
@@ -2158,9 +2281,14 @@ class TerraformManager:
             self.pause()
             return
 
+        provider_labels = {"alteon": "Alteon ADC", "netscaler": "NetScaler ADC"}
+        providers = [
+            provider for provider in ("alteon", "netscaler")
+            if any(item[0] == provider for item in variants)
+        ]
         self.print_heading("ADC-Typ auswaehlen:")
-        for idx, (_, label, _) in enumerate(variants, start=1):
-            print(f"  {idx}) {label}")
+        for idx, provider_name in enumerate(providers, start=1):
+            print(f"  {idx}) {provider_labels[provider_name]}")
         print("  0) Abbrechen")
         print()
         selected_raw = input("Auswahl: ").strip()
@@ -2168,11 +2296,28 @@ class TerraformManager:
             print("Erstellung abgebrochen.")
             self.pause()
             return
-        if not selected_raw.isdigit() or not 1 <= int(selected_raw) <= len(variants):
+        if not selected_raw.isdigit() or not 1 <= int(selected_raw) <= len(providers):
             print("Ungueltige Auswahl.")
             self.pause()
             return
-        _, template_label, selected_template_dir = variants[int(selected_raw) - 1]
+        provider = providers[int(selected_raw) - 1]
+        provider_variants = [item for item in variants if item[0] == provider]
+        print()
+        self.print_heading(f"Template fuer {provider_labels[provider]} auswaehlen:")
+        for idx, (_, label, path) in enumerate(provider_variants, start=1):
+            print(f"  {idx}) {label} ({path})")
+        print("  0) Abbrechen")
+        print()
+        template_raw = input("Auswahl: ").strip()
+        if template_raw == "0":
+            print("Erstellung abgebrochen.")
+            self.pause()
+            return
+        if not template_raw.isdigit() or not 1 <= int(template_raw) <= len(provider_variants):
+            print("Ungueltige Auswahl.")
+            self.pause()
+            return
+        _, template_label, selected_template_dir = provider_variants[int(template_raw) - 1]
         print(f"Template: {template_label}")
         print()
 
@@ -2187,9 +2332,23 @@ class TerraformManager:
             self.pause()
             return
 
+        print()
+        namespace = self.select_gitlab_namespace(provider)
+        if namespace is None:
+            print("Erstellung abgebrochen, da keine GitLab-Zielgruppe ausgewaehlt wurde.")
+            self.pause()
+            return
+        namespace_path = str(namespace.get("full_path", ""))
+        relative_namespace = self.get_relative_gitlab_group_path(namespace_path)
+        if relative_namespace is None:
+            print("Die ausgewaehlte GitLab-Gruppe liegt ausserhalb der konfigurierten Basisgruppe.")
+            self.pause()
+            return
+        environment_path = str(Path(relative_namespace) / environment_name)
+
         env_dir = self.get_environment_root()
         env_dir.mkdir(parents=True, exist_ok=True)
-        target_dir = self.get_environment_branch_path(environment_name)
+        target_dir = self.get_environment_branch_path(environment_path)
         if target_dir.exists():
             print(f"Die Umgebung existiert bereits: {target_dir}")
             self.pause()
@@ -2201,14 +2360,14 @@ class TerraformManager:
         print()
         print("Verbinde Umgebung mit Git...")
         try:
-            git_connected = self.ensure_environment_git_repository(environment_name, target_dir)
+            git_connected = self.ensure_environment_git_repository(environment_path, target_dir, namespace)
         except Exception as exc:
             git_connected = False
             print("Git-Anbindung konnte nicht vollstaendig abgeschlossen werden.")
             print(str(exc))
 
         if git_connected:
-            print(f"Git-Repository wurde verbunden: {self.get_environment_git_remote_url(environment_name)}")
+            print(f"Git-Repository wurde verbunden: {self.get_environment_git_remote_url(environment_path)}")
         else:
             print(f"Die lokale Umgebung bleibt erhalten: {target_dir}")
 
@@ -2482,8 +2641,17 @@ class TerraformManager:
         env_dir.mkdir(parents=True, exist_ok=True)
 
         self.print_heading("Verfuegbare Projekte:")
-        project_paths = [str(item.get("path_with_namespace", "")) for item in projects if item.get("path_with_namespace")]
-        for idx, path in enumerate(project_paths, start=1):
+        selectable_projects = []
+        for item in projects:
+            full_path = str(item.get("path_with_namespace", ""))
+            relative_path = self.get_relative_gitlab_project_path(full_path)
+            if relative_path:
+                selectable_projects.append((item, full_path, relative_path))
+        if not selectable_projects:
+            print("Keine Projekte innerhalb der konfigurierten GitLab-Gruppe gefunden.")
+            self.pause()
+            return
+        for idx, (_, path, _) in enumerate(selectable_projects, start=1):
             print(f"  {idx}) {path}")
         print("  0) Abbrechen")
         print()
@@ -2500,13 +2668,12 @@ class TerraformManager:
             return
 
         selected_index = int(selected_raw)
-        if selected_index < 1 or selected_index > len(project_paths):
+        if selected_index < 1 or selected_index > len(selectable_projects):
             print("Ungueltige Auswahl.")
             self.pause()
             return
 
-        selected_project_path = project_paths[selected_index - 1]
-        environment_name = selected_project_path.split("/")[-1]
+        selected_project, selected_project_path, environment_name = selectable_projects[selected_index - 1]
         target_dir = self.get_environment_branch_path(environment_name)
 
         if target_dir.exists():
@@ -2514,7 +2681,9 @@ class TerraformManager:
             self.pause()
             return
 
-        remote_url = f"{self.get_gitlab_base_url()}/{selected_project_path}.git"
+        remote_url = str(selected_project.get("http_url_to_repo", ""))
+        if not remote_url:
+            remote_url = f"{self.get_gitlab_base_url()}/{selected_project_path}.git"
         print(f"Klonen: {remote_url}")
         print(f"Zielpfad: {target_dir}")
 
