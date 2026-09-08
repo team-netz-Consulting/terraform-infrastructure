@@ -89,8 +89,9 @@ from urllib import error, parse, request
 
 
 SCRIPT_VERSION = "0.4.0"
-SCRIPT_BUILD = "20260907-002"
+SCRIPT_BUILD = "20260907-003"
 SCRIPT_CHANGELOG = (
+    "Getrennte GitLab-Wurzelgruppen fuer NetScaler und Alteon eingefuehrt.",
     "Mehrere providerbezogene Terraform-Templates bei der Umgebungserstellung auswaehlbar.",
     "GitLab-Subgroups beliebiger Tiefe und rekursive Projektlisten unterstuetzt.",
     "CLI-Shell fuer Git- und providerabhaengige Terraform-Variablen ergaenzt.",
@@ -132,6 +133,8 @@ class TerraformManager:
             "DEVELOP_BRANCH": "develop",
             "GIT_REMOTE_NAME": "origin",
             "GIT_GROUP_URL": "https://gitlab.team-netz.net/team-netz",
+            "GIT_GROUP_URL_NETSCALER": "https://gitlab.team-netz.net/team-netz/netscalerADC",
+            "GIT_GROUP_URL_ALTEON": "https://gitlab.team-netz.net/team-netz/alteonADC",
             "GIT_REMOTE_URL": "https://github.com/team-netz-Consulting/terraform-infrastructure.git",
             "GIT_USERNAME": "",
             "GIT_PASSWORD": "",
@@ -177,6 +180,8 @@ class TerraformManager:
         cfg["DEVELOP_BRANCH"] = cfg.get("DEVELOP_BRANCH", "develop") or "develop"
         cfg["GIT_REMOTE_NAME"] = cfg.get("GIT_REMOTE_NAME", "origin") or "origin"
         cfg["GIT_GROUP_URL"] = cfg.get("GIT_GROUP_URL", "https://gitlab.team-netz.net/team-netz") or "https://gitlab.team-netz.net/team-netz"
+        cfg["GIT_GROUP_URL_NETSCALER"] = cfg.get("GIT_GROUP_URL_NETSCALER", "") or cfg["GIT_GROUP_URL"]
+        cfg["GIT_GROUP_URL_ALTEON"] = cfg.get("GIT_GROUP_URL_ALTEON", "") or cfg["GIT_GROUP_URL"]
         cfg["GIT_REMOTE_URL"] = cfg.get(
             "GIT_REMOTE_URL",
             "https://github.com/team-netz-Consulting/terraform-infrastructure.git",
@@ -226,12 +231,18 @@ class TerraformManager:
             if not environments_dir.is_dir():
                 errors.append(f"ENVIRONMENTS_DIR ist kein gueltiges Verzeichnis: {environments_dir}")
 
-        for key in ("MASTER_BRANCH", "DEVELOP_BRANCH", "GIT_REMOTE_NAME", "GIT_GROUP_URL"):
+        for key in (
+            "MASTER_BRANCH", "DEVELOP_BRANCH", "GIT_REMOTE_NAME", "GIT_GROUP_URL",
+            "GIT_GROUP_URL_NETSCALER", "GIT_GROUP_URL_ALTEON",
+        ):
             if not self.config[key].strip():
                 errors.append(f"{key} darf nicht leer sein.")
 
         if not parse.urlsplit(self.config["GIT_GROUP_URL"]).scheme:
             errors.append(f"GIT_GROUP_URL ist keine gueltige URL: {self.config['GIT_GROUP_URL']}")
+        for key in ("GIT_GROUP_URL_NETSCALER", "GIT_GROUP_URL_ALTEON"):
+            if not parse.urlsplit(self.config[key]).scheme:
+                errors.append(f"{key} ist keine gueltige URL: {self.config[key]}")
         if self.config["GIT_REMOTE_URL"] and not parse.urlsplit(self.config["GIT_REMOTE_URL"]).scheme:
             errors.append(f"GIT_REMOTE_URL ist keine gueltige URL: {self.config['GIT_REMOTE_URL']}")
 
@@ -304,6 +315,8 @@ class TerraformManager:
             "DEVELOP_BRANCH",
             "GIT_REMOTE_NAME",
             "GIT_GROUP_URL",
+            "GIT_GROUP_URL_NETSCALER",
+            "GIT_GROUP_URL_ALTEON",
             "GIT_REMOTE_URL",
             "GIT_USERNAME",
             "GIT_PASSWORD",
@@ -643,24 +656,41 @@ class TerraformManager:
         # nicht als Fallback dienen; es gehoert ausschliesslich zu Umgebungen.
         return self.config["GIT_REMOTE_URL"]
 
-    def get_environment_git_remote_url(self, environment_name: str) -> str:
-        return f'{self.config["GIT_GROUP_URL"].rstrip("/")}/{environment_name}.git'
+    def get_provider_gitlab_group_url(self, provider: Optional[str] = None) -> str:
+        if provider == "netscaler":
+            return self.config["GIT_GROUP_URL_NETSCALER"].rstrip("/")
+        if provider == "alteon":
+            return self.config["GIT_GROUP_URL_ALTEON"].rstrip("/")
+        return self.config["GIT_GROUP_URL"].rstrip("/")
 
-    def get_relative_gitlab_project_path(self, path_with_namespace: str) -> Optional[str]:
-        group_path = self.get_gitlab_group_path().strip("/")
+    def get_environment_git_remote_url(self, environment_name: str) -> str:
+        path = Path(environment_name)
+        provider = path.parts[0] if path.parts and path.parts[0] in ("alteon", "netscaler") else None
+        relative_parts = path.parts[1:] if provider else path.parts
+        relative_path = "/".join(relative_parts)
+        return f'{self.get_provider_gitlab_group_url(provider)}/{relative_path}.git'
+
+    def get_relative_gitlab_project_path(
+        self, path_with_namespace: str, provider: Optional[str] = None
+    ) -> Optional[str]:
+        group_path = self.get_gitlab_group_path(provider).strip("/")
         prefix = f"{group_path}/"
         if not path_with_namespace.startswith(prefix):
             return None
         relative_path = path_with_namespace[len(prefix):]
-        return relative_path if self.validate_environment_path(relative_path) else None
+        local_path = f"{provider}/{relative_path}" if provider else relative_path
+        return local_path if self.validate_environment_path(local_path) else None
 
-    def get_relative_gitlab_group_path(self, full_group_path: str) -> Optional[str]:
-        group_path = self.get_gitlab_group_path().strip("/")
+    def get_relative_gitlab_group_path(self, full_group_path: str, provider: str) -> Optional[str]:
+        group_path = self.get_gitlab_group_path(provider).strip("/")
+        if full_group_path == group_path:
+            return provider
         prefix = f"{group_path}/"
         if not full_group_path.startswith(prefix):
             return None
         relative_path = full_group_path[len(prefix):]
-        return relative_path if self.validate_environment_path(relative_path) else None
+        local_path = f"{provider}/{relative_path}"
+        return local_path if self.validate_environment_path(local_path) else None
 
     def get_gitlab_api_url(self) -> str:
         if self.config["GITLAB_API_URL"]:
@@ -668,12 +698,12 @@ class TerraformManager:
         parsed = parse.urlsplit(self.config["GIT_GROUP_URL"])
         return f"{parsed.scheme}://{parsed.netloc}/api/v4"
 
-    def get_gitlab_base_url(self) -> str:
-        parsed = parse.urlsplit(self.config["GIT_GROUP_URL"])
+    def get_gitlab_base_url(self, provider: Optional[str] = None) -> str:
+        parsed = parse.urlsplit(self.get_provider_gitlab_group_url(provider))
         return f"{parsed.scheme}://{parsed.netloc}"
 
-    def get_gitlab_group_path(self) -> str:
-        parsed = parse.urlsplit(self.config["GIT_GROUP_URL"])
+    def get_gitlab_group_path(self, provider: Optional[str] = None) -> str:
+        parsed = parse.urlsplit(self.get_provider_gitlab_group_url(provider))
         return parsed.path.lstrip("/")
 
     def ensure_curl_available(self) -> bool:
@@ -759,8 +789,8 @@ class TerraformManager:
         except json.JSONDecodeError:
             return None
 
-    def get_gitlab_group_response(self) -> Optional[dict]:
-        group_path = self.get_gitlab_group_path()
+    def get_gitlab_group_response(self, provider: Optional[str] = None) -> Optional[dict]:
+        group_path = self.get_gitlab_group_path(provider)
         encoded_group = parse.quote(group_path, safe="")
         result = self.api_request(f"/groups/{encoded_group}")
         if result.status_code != 200:
@@ -770,11 +800,11 @@ class TerraformManager:
             return payload
         return None
 
-    def list_gitlab_descendant_groups_data(self) -> Optional[List[dict]]:
+    def list_gitlab_descendant_groups_data(self, provider: str) -> Optional[List[dict]]:
         if not self.ensure_gitlab_authentication_configured():
             return None
 
-        encoded_group = parse.quote(self.get_gitlab_group_path(), safe="")
+        encoded_group = parse.quote(self.get_gitlab_group_path(provider), safe="")
         groups: List[dict] = []
         page = 1
         while True:
@@ -794,22 +824,13 @@ class TerraformManager:
             page += 1
 
     def select_gitlab_namespace(self, provider: str) -> Optional[dict]:
-        root_group = self.get_gitlab_group_response()
-        descendant_groups = self.list_gitlab_descendant_groups_data()
+        root_group = self.get_gitlab_group_response(provider)
+        descendant_groups = self.list_gitlab_descendant_groups_data(provider)
         if not root_group or descendant_groups is None:
             print("GitLab-Gruppen konnten nicht gelesen werden.")
             return None
 
-        root_path = self.get_gitlab_group_path().strip("/")
-        provider_prefix = f"{root_path}/{provider}"
-        candidates = [
-            group for group in descendant_groups
-            if str(group.get("full_path", "")) == provider_prefix
-            or str(group.get("full_path", "")).startswith(f"{provider_prefix}/")
-        ]
-        if not candidates:
-            print(f"Keine vorhandene GitLab-Subgroup unter '{provider_prefix}' gefunden.")
-            return None
+        candidates = [root_group, *descendant_groups]
 
         candidates.sort(key=lambda group: str(group.get("full_path", "")))
         self.print_heading("GitLab-Zielgruppe auswaehlen:")
@@ -860,8 +881,8 @@ class TerraformManager:
 
     def print_gitlab_settings(self) -> None:
         print(f"GitLab API: {self.get_gitlab_api_url()}")
-        print(f"GitLab Gruppe: {self.get_gitlab_group_path()}")
-        print(f'Git Remote-Basis: {self.config["GIT_GROUP_URL"].rstrip("/")}')
+        print(f"GitLab Gruppe NetScaler: {self.get_gitlab_group_path('netscaler')}")
+        print(f"GitLab Gruppe Alteon: {self.get_gitlab_group_path('alteon')}")
         if self.config["GIT_ACCESS_TOKEN"]:
             print("Authentifizierung: Access Token")
         elif self.config["GIT_USERNAME"] and self.config["GIT_PASSWORD"]:
@@ -1049,48 +1070,59 @@ class TerraformManager:
             self.pause()
             return
 
-        group = self.get_gitlab_group_response()
-        if not group:
-            print("GitLab-Gruppe konnte nicht gelesen werden.")
-            self.pause()
-            return
-
-        print("Gruppe gefunden.")
-        print(f"Name: {group.get('name', 'unbekannt')}")
-        print(f"Pfad: {group.get('full_path', 'unbekannt')}")
-        print(f"ID: {group.get('id', 'unbekannt')}")
-        print(f"URL: {group.get('web_url', 'unbekannt')}")
+        for provider, label in (("netscaler", "NetScaler"), ("alteon", "Alteon")):
+            group = self.get_gitlab_group_response(provider)
+            if not group:
+                print(f"{label}: GitLab-Gruppe konnte nicht gelesen werden.")
+                continue
+            print(f"{label}: Gruppe gefunden.")
+            print(f"  Name: {group.get('name', 'unbekannt')}")
+            print(f"  Pfad: {group.get('full_path', 'unbekannt')}")
+            print(f"  ID: {group.get('id', 'unbekannt')}")
+            print(f"  URL: {group.get('web_url', 'unbekannt')}")
         self.pause()
 
     def list_gitlab_projects_data(self) -> Optional[List[dict]]:
         if not self.ensure_gitlab_authentication_configured():
             return None
 
-        encoded_group = parse.quote(self.get_gitlab_group_path(), safe="")
         projects: List[dict] = []
-        page = 1
-        while True:
-            result = self.api_request(
-                f"/groups/{encoded_group}/projects",
-                params={
-                    "include_subgroups": "true",
-                    "with_shared": "false",
-                    "per_page": "100",
-                    "page": str(page),
-                    "order_by": "name",
-                    "sort": "asc",
-                },
-            )
-            if result.status_code != 200:
-                return None
-            payload = self.parse_json(result.body)
-            if not isinstance(payload, list):
-                return None
-            page_projects = [item for item in payload if isinstance(item, dict)]
-            projects.extend(page_projects)
-            if len(payload) < 100:
-                return projects
-            page += 1
+        seen_ids: set[int] = set()
+        for provider in ("alteon", "netscaler"):
+            encoded_group = parse.quote(self.get_gitlab_group_path(provider), safe="")
+            page = 1
+            while True:
+                result = self.api_request(
+                    f"/groups/{encoded_group}/projects",
+                    params={
+                        "include_subgroups": "true",
+                        "with_shared": "false",
+                        "per_page": "100",
+                        "page": str(page),
+                        "order_by": "name",
+                        "sort": "asc",
+                    },
+                )
+                if result.status_code != 200:
+                    return None
+                payload = self.parse_json(result.body)
+                if not isinstance(payload, list):
+                    return None
+                for item in payload:
+                    if not isinstance(item, dict):
+                        continue
+                    project_id = item.get("id")
+                    if isinstance(project_id, int) and project_id in seen_ids:
+                        continue
+                    project = dict(item)
+                    project["_terraform_provider"] = provider
+                    projects.append(project)
+                    if isinstance(project_id, int):
+                        seen_ids.add(project_id)
+                if len(payload) < 100:
+                    break
+                page += 1
+        return sorted(projects, key=lambda item: str(item.get("path_with_namespace", "")))
 
     def list_gitlab_projects(self) -> None:
         self.print_header()
@@ -1167,8 +1199,11 @@ class TerraformManager:
             self.pause()
             return
 
-        print("2/3 Gruppe pruefen...")
-        if self.get_gitlab_group_response() is not None:
+        print("2/3 Gruppen pruefen...")
+        if all(
+            self.get_gitlab_group_response(provider) is not None
+            for provider in ("netscaler", "alteon")
+        ):
             print("  OK")
         else:
             print("  Fehler")
@@ -2339,7 +2374,7 @@ class TerraformManager:
             self.pause()
             return
         namespace_path = str(namespace.get("full_path", ""))
-        relative_namespace = self.get_relative_gitlab_group_path(namespace_path)
+        relative_namespace = self.get_relative_gitlab_group_path(namespace_path, provider)
         if relative_namespace is None:
             print("Die ausgewaehlte GitLab-Gruppe liegt ausserhalb der konfigurierten Basisgruppe.")
             self.pause()
@@ -2644,7 +2679,8 @@ class TerraformManager:
         selectable_projects = []
         for item in projects:
             full_path = str(item.get("path_with_namespace", ""))
-            relative_path = self.get_relative_gitlab_project_path(full_path)
+            provider = str(item.get("_terraform_provider", "")) or None
+            relative_path = self.get_relative_gitlab_project_path(full_path, provider)
             if relative_path:
                 selectable_projects.append((item, full_path, relative_path))
         if not selectable_projects:
@@ -2683,7 +2719,8 @@ class TerraformManager:
 
         remote_url = str(selected_project.get("http_url_to_repo", ""))
         if not remote_url:
-            remote_url = f"{self.get_gitlab_base_url()}/{selected_project_path}.git"
+            provider = str(selected_project.get("_terraform_provider", "")) or None
+            remote_url = f"{self.get_gitlab_base_url(provider)}/{selected_project_path}.git"
         print(f"Klonen: {remote_url}")
         print(f"Zielpfad: {target_dir}")
 

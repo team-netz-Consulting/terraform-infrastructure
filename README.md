@@ -56,7 +56,9 @@ Die wichtigsten Einstellungen liegen in `manage-terraform.conf`, unter anderem:
 - `ENVIRONMENTS_DIR`: Ablageort der Umgebungen
 - `UPDATE_CHECK_ENABLED`: lokale Updatepruefung beim Programmstart aktivieren
 - `UPDATE_SOURCE_DIR`: Quellordner einer neueren Programmversion
-- `GIT_GROUP_URL`: GitLab-Gruppe fuer Umgebungs-Repositories
+- `GIT_GROUP_URL_NETSCALER`: Wurzelgruppe für alle NetScaler-Projekte
+- `GIT_GROUP_URL_ALTEON`: Wurzelgruppe für alle Alteon-Projekte
+- `GIT_GROUP_URL`: gemeinsamer Rückwärtskompatibilitäts-Fallback
 - `GIT_REMOTE_URL`: separates Git-Remote des Hauptprojekts (GitHub)
 - `TERRAFORM_TARGET_BRANCH`: aktueller Zielbranch, `develop` oder `master`
 - `ACTIVE_ENVIRONMENT`: aktuell ausgewaehlte Umgebung
@@ -84,10 +86,12 @@ Neue Environment-Repositories erhalten automatisch einen initialen `master`-
 Branch und einen davon abgeleiteten `develop`-Branch. Beide Branches werden zum
 Environment-Remote gepusht; anschließend bleibt `develop` lokal ausgecheckt.
 
-GitLab-Projekte in vorhandenen Untergruppen werden rekursiv erkannt. Der Pfad
-relativ zu `GIT_GROUP_URL` wird lokal gespiegelt. Ein Projekt
-`team-netz/netscaler/kunde/ns1/gslb` liegt daher beispielsweise unter
-`environments/netscaler/kunde/ns1/gslb`. Beim Erstellen einer Umgebung wird
+GitLab-Projekte in vorhandenen Untergruppen werden rekursiv erkannt. Die Suche
+beginnt exakt bei `GIT_GROUP_URL_NETSCALER` beziehungsweise
+`GIT_GROUP_URL_ALTEON`; der Manager hängt keinen festen Gruppennamen an. Der
+Pfad relativ zur jeweiligen Wurzelgruppe wird lokal unter dem ADC-Typ
+gespiegelt. Ein Projekt `team-netz/netscalerADC/kunde/ns1/gslb` liegt daher
+beispielsweise unter `environments/netscaler/kunde/ns1/gslb`. Beim Erstellen einer Umgebung wird
 eine vorhandene Ziel-Subgroup passend zum gewählten ADC-Typ ausgewählt; das
 Werkzeug erstellt keine Subgroups.
 
@@ -97,7 +101,7 @@ Die folgenden Befehle bilden den Ablauf von `manage-terraform.py` manuell ab.
 Im Beispiel lautet das GitLab-Projekt:
 
 ```text
-https://gitlab.team-netz.net/team-netz/netscaler/kunde/ns1/gslb
+https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb
 ```
 
 ### Neue lokale Umgebung mit einem leeren GitLab-Projekt verbinden
@@ -119,7 +123,7 @@ Danach das Repository initialisieren und das GitLab-Remote eintragen:
 
 ```bash
 git init --initial-branch master
-git remote add origin https://gitlab.team-netz.net/team-netz/netscaler/kunde/ns1/gslb.git
+git remote add origin https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git
 git remote -v
 ```
 
@@ -127,7 +131,7 @@ Falls `origin` bereits existiert, wird – wie im Python-Manager – seine URL
 aktualisiert:
 
 ```bash
-git remote set-url origin https://gitlab.team-netz.net/team-netz/netscaler/kunde/ns1/gslb.git
+git remote set-url origin https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git
 ```
 
 Den initialen Stand committen und `master` veröffentlichen:
@@ -155,7 +159,7 @@ ausgecheckt.
 Bei `ENVIRONMENT_FOLDER_STRUCTURE=single`:
 
 ```bash
-git clone https://gitlab.team-netz.net/team-netz/netscaler/kunde/ns1/gslb.git \
+git clone https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git \
   environments/netscaler/kunde/ns1/gslb
 cd environments/netscaler/kunde/ns1/gslb
 git checkout develop
@@ -166,11 +170,11 @@ eigenes Verzeichnis geklont werden:
 
 ```bash
 git clone --branch develop \
-  https://gitlab.team-netz.net/team-netz/netscaler/kunde/ns1/gslb.git \
+  https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git \
   environments/netscaler/kunde/ns1/gslb/develop
 
 git clone --branch master \
-  https://gitlab.team-netz.net/team-netz/netscaler/kunde/ns1/gslb.git \
+  https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git \
   environments/netscaler/kunde/ns1/gslb/master
 ```
 
