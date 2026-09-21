@@ -2766,10 +2766,10 @@ class TerraformManager:
     def show_menu(self) -> None:
         while True:
             self.print_header()
-            print("1) Aktive Umgebung auswaehlen")
+            print("1) Aktivea Projekt auswaehlen")
             print("2) Terraform")
             print("3) GitLab")
-            print("4) Umgebungen verwalten")
+            print("4) Projekte verwalten")
             print("5) Info")
             print("0) Beenden")
             print()
