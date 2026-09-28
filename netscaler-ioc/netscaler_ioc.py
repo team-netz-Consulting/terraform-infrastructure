@@ -11,7 +11,10 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -79,7 +82,43 @@ def run_shell(client, command, timeout, log):
         channel.close()
 
 
-def process_host(ip, args, username, password, run_dir, paramiko, scp_class):
+def transfer_file(ip, args, username, password, local_path, remote_path, *, download=False):
+    """Run OpenSSH scp with password authentication and strict host-key checks."""
+    host = f"[{ip}]" if ":" in ip else ip
+    remote = f"{host}:{remote_path}"
+    command = [
+        "scp", "-O", "-P", str(args.port),
+        "-o", f"User={username}",
+        "-o", "StrictHostKeyChecking=yes",
+        "-o", "ConnectTimeout=30",
+        "-o", "ServerAliveInterval=15",
+        "-o", "ServerAliveCountMax=3",
+        "-o", "PubkeyAuthentication=no",
+        "-o", "PreferredAuthentications=password,keyboard-interactive",
+        "-o", "NumberOfPasswordPrompts=1",
+    ]
+    if args.known_hosts:
+        host_files = [Path.home() / ".ssh/known_hosts", Path.home() / ".ssh/known_hosts2",
+                      args.known_hosts.resolve()]
+        command += ["-o", "UserKnownHostsFile=" + " ".join(
+            '"' + str(path) + '"' for path in host_files)]
+    local = str(Path(local_path).resolve())
+    command += ["--", remote, local] if download else ["--", local, remote]
+    with tempfile.TemporaryDirectory(prefix="ioc-scp-") as directory:
+        askpass = Path(directory) / "askpass"
+        askpass.write_text('#!/bin/sh\nprintf \'%s\\n\' "$IOC_SCP_PASSWORD"\n')
+        askpass.chmod(0o700)
+        environment = dict(os.environ, SSH_ASKPASS=str(askpass),
+                           SSH_ASKPASS_REQUIRE="force", DISPLAY=":0",
+                           IOC_SCP_PASSWORD=password)
+        result = subprocess.run(command, env=environment, stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, timeout=60,
+                                start_new_session=True)
+        if result.returncode:
+            raise RuntimeError(f"SCP fehlgeschlagen: {result.stderr.strip()}")
+
+
+def process_host(ip, args, username, password, run_dir, paramiko):
     destination = run_dir / ip.replace(":", "_")
     destination.mkdir(mode=0o700)
     # A unique directory prevents downloading a result from an earlier run.
@@ -95,8 +134,7 @@ def process_host(ip, args, username, password, run_dir, paramiko, scp_class):
                        auth_timeout=30, banner_timeout=30)
         with (destination / "execution.log").open("wb") as log:
             run_shell(client, f"umask 077; mkdir {shlex.quote(remote_dir)}", 60, log)
-            with scp_class(client.get_transport(), socket_timeout=60) as transfer:
-                transfer.put(str(args.script), remote_path=remote_dir + "/" + SCRIPT)
+            transfer_file(ip, args, username, password, args.script, remote_dir + "/" + SCRIPT)
             prepare = (
                 f"cd {shlex.quote(remote_dir)} && "
                 f'test "$(sha256 -q {SCRIPT})" = {shlex.quote(args.sha256)} && '
@@ -109,8 +147,8 @@ def process_host(ip, args, username, password, run_dir, paramiko, scp_class):
                 run_shell(client, f"cd {shlex.quote(remote_dir)} && ./{SCRIPT}", args.timeout, log)
             except RuntimeError as error:
                 run_error = error
-            with scp_class(client.get_transport(), socket_timeout=60) as transfer:
-                transfer.get(remote_dir + "/result.txt", local_path=str(destination / "result.txt.part"))
+            transfer_file(ip, args, username, password, destination / "result.txt.part",
+                          remote_dir + "/result.txt", download=True)
             (destination / "result.txt.part").replace(destination / "result.txt")
             if run_error:
                 raise run_error
@@ -150,16 +188,17 @@ def main():
             return 0
         try:
             import paramiko
-            from scp import SCPClient
         except ImportError as error:
             raise ValueError("Abhängigkeiten fehlen: pip install -r netscaler-ioc/requirements.txt") from error
+        if shutil.which("scp") is None:
+            raise ValueError("Abhängigkeit fehlt: OpenSSH scp muss installiert sein.")
         username = os.environ.get("TF_VAR_netscaler_username") or input("NetScaler Username: ").strip()
         password = os.environ.get("TF_VAR_netscaler_password") or getpass.getpass("NetScaler Passwort: ")
         if not username or not password:
             raise ValueError("Benutzername und Passwort dürfen nicht leer sein.")
         run_dir = args.output / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8])
         run_dir.mkdir(parents=True, mode=0o700)
-        records = [process_host(ip, args, username, password, run_dir, paramiko, SCPClient) for ip in ips]
+        records = [process_host(ip, args, username, password, run_dir, paramiko) for ip in ips]
         (run_dir / "summary.json").write_text(json.dumps(records, indent=2) + "\n")
         print(f"Ergebnisse: {run_dir}")
         return 0 if all(record["success"] for record in records) else 1

@@ -1,7 +1,7 @@
 # NetScaler IOC-Prüfung
 
 Python 3.11 oder neuer. SSH nutzt wie die Alteon-Skripte `paramiko`;
-für SCP kommt das Modul `scp` hinzu.
+für SCP wird das Linux-Kommando `scp` (OpenSSH) benötigt.
 
 ```bash
 python3 -m venv netscaler-ioc/.venv
