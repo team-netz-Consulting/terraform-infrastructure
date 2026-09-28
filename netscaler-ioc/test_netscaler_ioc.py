@@ -38,10 +38,11 @@ class LocalChecks(unittest.TestCase):
             data = []
 
             def execute(command):
+                command = command.decode("utf-8")
                 token = re.search(r"IOC_DONE_[a-f0-9]+", command).group()
                 data.append((f"\n{token}:{status}\n" if status is not None else "ERROR: shell denied\n").encode())
 
-            channel.exec_command.side_effect = execute
+            channel.sendall.side_effect = execute
             channel.recv_ready.side_effect = lambda: bool(data)
             channel.recv.side_effect = lambda size: data.pop()
             channel.recv_stderr_ready.return_value = False
@@ -52,9 +53,14 @@ class LocalChecks(unittest.TestCase):
             if status == 0:
                 ioc.run_shell(client, "true", 1, io.BytesIO())
             else:
-                with self.assertRaises(RuntimeError):
+                with self.assertRaises(RuntimeError) as raised:
                     ioc.run_shell(client, "false", 1, io.BytesIO())
+                if status is None:
+                    self.assertIn("SSH-Status 0", str(raised.exception))
+                    self.assertIn("ERROR: shell denied", str(raised.exception))
             channel.close.assert_called_once()
+            channel.exec_command.assert_called_once_with("shell /bin/sh -s")
+            channel.shutdown_write.assert_called_once()
 
 
 if __name__ == "__main__":

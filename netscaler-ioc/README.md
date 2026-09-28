@@ -20,13 +20,16 @@ SSH-Hostschlüssel müssen in `~/.ssh/known_hosts` oder einer mit
 
 Die Datei wird direkt als `ioc-script-v1.sh` in einem neu angelegten
 Verzeichnis `/var/ioc-<ID>` auf jedem ADC gespeichert und dort ausgeführt.
+Mit `--remote-dir /var/tmp` wird stattdessen `/var/tmp/ioc-<ID>` verwendet.
+Das angegebene Basisverzeichnis muss auf jedem ADC existieren und für den
+angemeldeten Benutzer beschreibbar sein.
 Die vorgegebene Skript-Prüfsumme wird lokal und nach dem Upload geprüft. Für eine andere
 freigegebene Prüfsumme gibt es `--sha256 HASH`.
 
 `--check-only` prüft die Eingaben lokal ohne SSH-Verbindung.
 
 Pro IP erfolgen SCP-Upload, SSH-Ausführung über `shell /bin/sh -c` und
-SCP-Download. Ein neues Verzeichnis `/var/ioc-<ID>` verhindert, dass alte
+SCP-Download. Ein neues Unterverzeichnis `ioc-<ID>` verhindert, dass alte
 `result.txt`-Dateien als neue Ergebnisse übernommen werden. Erwartet wird,
 dass das Skript `result.txt` im Arbeitsverzeichnis erzeugt. Die Remote-Dateien
 bleiben zur Diagnose erhalten. Das Skript erhält keine interaktiven Antworten.
