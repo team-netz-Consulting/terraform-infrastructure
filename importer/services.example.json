@@ -1,0 +1,68 @@
+{
+  "services": {
+    "service-1": {
+      "task": "add",
+      "fqdn": "service-1.example.org",
+      "environment": "e2a",
+      "stage": "eng",
+      "cs_vip_mz": "192.168.101.91",
+      "cs_vip_wi": "192.168.102.91",
+      "portgroups": {
+        "portgroup001": {
+          "ports": [10301, 10302, 10303, 10304],
+          "members": [
+            {
+              "server_name": "srv_service1_wi_01",
+              "server_ip": "10.1.1.21"
+            },
+            {
+              "server_name": "srv_service1_mz_01",
+              "server_ip": "10.1.5.34"
+            }
+          ]
+        },
+        "portgroup002": {
+          "ports": [10308],
+          "members": [
+            {
+              "server_name": "srv_service1_wi_02",
+              "server_ip": "10.1.1.20"
+            }
+          ]
+        }
+      }
+    },
+    "service-2": {
+      "task": "modify",
+      "fqdn": "service-2.example.org",
+      "environment": "e2p",
+      "stage": "prod",
+      "cs_vip_mz": "192.168.101.92",
+      "cs_vip_wi": "192.168.102.92",
+      "portgroups": {
+        "portgroup001": {
+          "ports": [10401, 10402, 10403, 10404],
+          "members": [
+            {
+              "server_name": "srv_service2_wi_01",
+              "server_ip": "10.1.1.31"
+            },
+            {
+              "server_name": "srv_service2_mz_01",
+              "server_ip": "10.1.2.44"
+            }
+          ]
+        },
+        "portgroup002": {
+          "ports": [10408],
+          "members": [
+            {
+              "server_name": "srv_service2_wi_02",
+              "server_ip": "10.1.1.30"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

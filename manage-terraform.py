@@ -2728,8 +2728,8 @@ class TerraformManager:
             target_dir.parent.mkdir(parents=True, exist_ok=True)
             self.run_git(["clone", remote_url, str(target_dir)], auth=True)
             self.ensure_repo_branch(target_dir, self.get_selected_branch())
-            print(f"Umgebung wurde geklont: {target_dir}")
-            print(f"Aktiver Branch in der geklonten Umgebung: {self.get_current_branch_name(target_dir) or 'unbekannt'}")
+            print(f"Projekt wurde geklont: {target_dir}")
+            print(f"Aktiver Branch in der geklonten Projekt: {self.get_current_branch_name(target_dir) or 'unbekannt'}")
         except Exception as exc:
             print("Klonen fehlgeschlagen.")
             print(str(exc))
@@ -2739,12 +2739,12 @@ class TerraformManager:
     def show_environment_management_menu(self) -> None:
         while True:
             self.print_header()
-            self.print_heading("Umgebungen lokal verwalten")
+            self.print_heading("Projekte lokal verwalten")
             print()
-            print("1) Neue Umgebung erstellen")
-            print("2) Bestehende Umgebung loeschen")
-            print("3) Bestehende Umgebungen anzeigen")
-            print("4) Umgebung aus GitLab klonen")
+            print("1) Neues Projekt erstellen")
+            print("2) Bestehende Projekt loeschen")
+            print("3) Bestehende Projekte anzeigen")
+            print("4) Projekt aus GitLab klonen")
             print("0) Zurueck")
             print()
 
@@ -2766,7 +2766,7 @@ class TerraformManager:
     def show_menu(self) -> None:
         while True:
             self.print_header()
-            print("1) Aktivea Projekt auswaehlen")
+            print("1) Aktives Projekt auswaehlen")
             print("2) Terraform")
             print("3) GitLab")
             print("4) Projekte verwalten")

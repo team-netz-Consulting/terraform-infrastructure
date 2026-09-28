@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/services.schema.json",
+  "title": "Services-Konfiguration",
+  "description": "Schema für Services mit Portgruppen sowie lokalen und entfernten Mitgliedern.",
+  "type": "object",
+  "required": ["services"],
+  "additionalProperties": false,
+  "properties": {
+    "services": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/service"
+      }
+    }
+  },
+  "$defs": {
+    "ipv4": {
+      "type": "string",
+      "format": "ipv4"
+    },
+    "member": {
+      "type": "object",
+      "required": ["server_name", "server_ip"],
+      "additionalProperties": false,
+      "properties": {
+        "server_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "server_ip": {
+          "$ref": "#/$defs/ipv4"
+        }
+      }
+    },
+    "portgroup": {
+      "type": "object",
+      "required": ["ports", "members"],
+      "additionalProperties": false,
+      "properties": {
+        "ports": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/member"
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "required": [
+        "environment",
+        "stage",
+        "cs_vip_mz",
+        "cs_vip_wi",
+        "portgroups"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "type": "string",
+          "enum": ["delete", "add", "modify"]
+        },
+        "fqdn": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "string",
+          "enum": ["e2a", "e2p", "e2t"]
+        },
+        "stage": {
+          "type": "string",
+          "enum": ["eng", "kt", "at", "prod"]
+        },
+        "cs_vip_mz": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "cs_vip_wi": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "portgroups": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^portgroup[0-9]+$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/portgroup"
+          }
+        }
+      }
+    }
+  }
+}
