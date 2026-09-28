@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Upload an IOC script, run it via NetScaler shell, collect results per IP."""
+#version 1.0
+
 
 import argparse
 from datetime import datetime, timezone
