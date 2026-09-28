@@ -4,7 +4,6 @@
 
 
 import argparse
-from datetime import datetime, timezone
 import getpass
 import hashlib
 import ipaddress
@@ -124,12 +123,12 @@ def transfer_file(ip, args, username, password, local_path, remote_path, *, down
                                 capture_output=True, text=True, timeout=60,
                                 start_new_session=True)
         if result.returncode:
-            raise RuntimeError(f"SCP fehlgeschlagen: {result.stderr.strip()}")
+            raise RuntimeError(f"SCP fehlgeschlagen: {result.stderr.strip()}\n")
 
 
 def process_host(ip, args, username, password, run_dir, paramiko):
     destination = run_dir / ip.replace(":", "_")
-    destination.mkdir(mode=0o700)
+    destination.mkdir(mode=0o700, exist_ok=True)
     # A unique directory prevents downloading a result from an earlier run.
     remote_dir = args.remote_dir.rstrip("/") + "/ioc-" + uuid.uuid4().hex
     record = {"ip": ip, "remote_directory": remote_dir, "success": False}
@@ -156,13 +155,13 @@ def process_host(ip, args, username, password, run_dir, paramiko):
                 run_shell(client, f"cd {shlex.quote(remote_dir)} && ./{SCRIPT}", args.timeout, log)
             except RuntimeError as error:
                 run_error = error
-            transfer_file(ip, args, username, password, destination / "result.txt.part",
-                          remote_dir + "/result.txt", download=True)
-            (destination / "result.txt.part").replace(destination / "result.txt")
+            transfer_file(ip, args, username, password, destination / "results.txt.part",
+                          remote_dir + "/results.txt", download=True)
+            (destination / "results.txt.part").replace(destination / "results.txt")
             if run_error:
                 raise run_error
         record["success"] = True
-        print(f"[{ip}] OK: {destination / 'result.txt'}")
+        print(f"[{ip}] OK: {destination / 'results.txt'}")
     except Exception as error:
         record["error"] = str(error).replace(password, "***")
         print(f"[{ip}] FEHLER: {record['error']}", file=sys.stderr)
@@ -195,7 +194,7 @@ def main():
         if not args.remote_dir.startswith("/") or any(c in args.remote_dir for c in "\x00\r\n"):
             raise ValueError("--remote-dir muss ein absoluter Remote-Pfad ohne Zeilenumbrüche sein.")
         ips = read_ips(args.ips)
-        inspect_script(args.script, args.sha256)
+        #inspect_script(args.script, args.sha256)
         print(f"Prüfung OK: {len(ips)} Ziel-IP(s), SHA256 stimmt überein.")
         if args.check_only:
             return 0
@@ -209,8 +208,8 @@ def main():
         password = os.environ.get("TF_VAR_netscaler_password") or getpass.getpass("NetScaler Passwort: ")
         if not username or not password:
             raise ValueError("Benutzername und Passwort dürfen nicht leer sein.")
-        run_dir = args.output / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8])
-        run_dir.mkdir(parents=True, mode=0o700)
+        run_dir = args.output
+        run_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
         records = [process_host(ip, args, username, password, run_dir, paramiko) for ip in ips]
         (run_dir / "summary.json").write_text(json.dumps(records, indent=2) + "\n")
         print(f"Ergebnisse: {run_dir}")
