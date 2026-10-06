@@ -28,7 +28,7 @@ python3 importer/import_services.py daten.json \
   werden IPv4-CIDR-Netze sowie abschließende `x`- oder `*`-Oktette (Sternmuster
   in der Shell in Anführungszeichen setzen). Auch `--local_ip` und
   `--remote_ip` werden akzeptiert. Die Bereiche dürfen sich nicht überschneiden.
-- Neue Services werden im bestehenden `services`-Block ergänzt. Gleichnamige
+- Neue Services werden im bestehenden `cs_services`-Block ergänzt. Gleichnamige
   Services werden vollständig mit der JSON-Konfiguration aktualisiert (einschließlich
   ihrer Portgruppen und Member). Services, die nicht in der JSON-Datei stehen,
   bleiben mit ihrer Formatierung und ihren Kommentaren erhalten. Auch alle
@@ -51,7 +51,7 @@ python3 importer/import_services.py daten.json \
   Fehlende Remote-Member und mehrfach verwendete CS-VIPs erzeugen Warnungen.
 - Das mitgelieferte Beispiel funktioniert für WI. Für MZ fehlen in den jeweiligen
   `portgroup002` lokale Mitglieder; der Import wird deshalb abgelehnt.
-- Das Ziel muss einen literalen `services = { ... }`-Block enthalten. Heredocs
+- Das Ziel muss einen literalen `cs_services = { ... }`-Block enthalten. Heredocs
   im Ziel werden nicht unterstützt und führen zum Abbruch.
 - Infos und Warnungen stehen auf stderr, die Vorschau des zusammengeführten Services-Blocks auf
   stdout. Die übrigen Einstellungen werden nicht ausgegeben. Exitcode 0 bedeutet

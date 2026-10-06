@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """JSON-Services standortabhängig in eine Terraform-tfvars-Datei importieren."""
-
 import argparse
 from datetime import datetime, timezone
 import difflib
@@ -72,6 +71,8 @@ def validate(value, schema, root, path='$'):
             raise ValueError(f'{path}: Port muss zwischen 1 und 65535 liegen')
     if 'pattern' in schema and not re.search(schema['pattern'], value):
         raise ValueError(f'{path}: Ungültiger Name: {value}')
+    if 'enum' in schema and value not in schema['enum']:
+        raise ValueError(f'{path}: Ungültiger Wert: {value}; erlaubt: {schema["enum"]}')
 
 
 def network(text):
@@ -94,14 +95,19 @@ def convert(data, site, local_net, remote_net):
     servers = {}
     vips = set()
     for name, service in data['services'].items():
-        remote_site = 'mz' if site == 'wi' else 'wi'
-        if (service['local_site'], service['remote_site']) != (site, remote_site):
-            LOG.info('%s: Standortangaben werden auf lokal=%s, remote=%s gesetzt', name, site, remote_site)
+        if service.get('task') == 'delete':
+            services[name] = None
+            continue
+        remote_sites = [key.removeprefix('cs_vip_') for key in service
+                        if key.startswith('cs_vip_') and key != f'cs_vip_{site}']
+        if len(remote_sites) != 1:
+            raise ValueError(f'{name}: Genau ein entfernter Standort für {site} erforderlich')
+        remote_site = remote_sites[0]
         vip = service[f'cs_vip_{site}']
         if vip in vips:
             LOG.warning('%s: CS-VIP %s wird mehrfach verwendet', name, vip)
         vips.add(vip)
-        result = {key: service[key] for key in ('umgebung', 'verfahren')}
+        result = {key: service[key] for key in ('environment', 'stage')}
         result.update(cs_vip=vip, local_site=site, remote_site=remote_site, portgroups={})
         seen_ports = set()
         for group_name, group in service['portgroups'].items():
@@ -140,6 +146,37 @@ def convert(data, site, local_net, remote_net):
     return services
 
 
+def convert_gslb(data, services):
+    result = {}
+    for name, service in data['services'].items():
+        if service.get('task') == 'delete':
+            result[name] = None
+            continue
+        converted = services[name]
+        result[name] = {
+            'stage': service['stage'],
+            'environment': service['environment'],
+            'servicetype': service.get('servicetype', 'TCP'),
+            'dnsrecordtype': 'A',
+            'lbmethod': 'ROUNDROBIN',
+            'edr': 'ENABLED',
+            'tolerance': '0',
+            'services': {
+                location: {
+                    'site': converted[f'{location}_site'],
+                    'ip': service[f"cs_vip_{converted[f'{location}_site']}"],
+                    'port': 65535,
+                    'weight': 1,
+                }
+                for location in ('local', 'remote')
+            },
+            'gslb_domains': {
+                'primary': {'domainname': service['fqdn'], 'ttl': 60}
+            } if service.get('fqdn') else {},
+        }
+    return result
+
+
 def hcl(value, level=0):
     if isinstance(value, str):
         # Terraform-Templates in importierten Texten müssen Literale bleiben.
@@ -158,11 +195,11 @@ def hcl(value, level=0):
 
 
 # Strings und Kommentare als einzelne Tokens behandeln, damit darin enthaltene
-# Klammern und das Wort "services" keine Blockgrenzen vortäuschen.
+# Klammern und das Wort "cs_services" keine Blockgrenzen vortäuschen.
 TOKEN = re.compile(r'\s+|\#[^\n]*|//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|[A-Za-z_][A-Za-z0-9_-]*|.', re.DOTALL)
 
 
-def services_span(original):
+def services_span(original, block='cs_services'):
     tokens = [m for m in TOKEN.finditer(original)
               if not m.group().isspace() and not m.group().startswith(('#', '//', '/*'))]
     depth = 0
@@ -171,9 +208,9 @@ def services_span(original):
         text = token.group()
         if text == '<' and i + 1 < len(tokens) and tokens[i + 1].group() == '<':
             raise ValueError('Heredoc in Zieldatei wird nicht unterstützt; kein Import durchgeführt')
-        if depth == 0 and text in ('services', '"services"'):
+        if depth == 0 and text in (block, json.dumps(block)):
             if i + 2 >= len(tokens) or tokens[i + 1].group() != '=' or tokens[i + 2].group() != '{':
-                raise ValueError('services muss in der Zieldatei ein literaler Objektblock sein')
+                raise ValueError(f'{block} muss in der Zieldatei ein literaler Objektblock sein')
             nesting = 0
             for end in tokens[i + 2:]:
                 if end.group() == '{':
@@ -184,7 +221,7 @@ def services_span(original):
                         spans.append((token.start(), end.end()))
                         break
             else:
-                raise ValueError('services-Block ist nicht geschlossen')
+                raise ValueError(f'{block}-Block ist nicht geschlossen')
         if text in ('{', '[', '('):
             depth += 1
         elif text in ('}', ']', ')'):
@@ -192,22 +229,24 @@ def services_span(original):
         if depth < 0:
             raise ValueError('Unausgeglichene Klammern in der Zieldatei')
     if depth or len(spans) != 1:
-        raise ValueError('Zieldatei muss genau einen geschlossenen services-Block enthalten')
+        raise ValueError(f'Zieldatei muss genau einen geschlossenen {block}-Block enthalten')
     return spans[0]
 
 
-def merge_services(original, services):
+def merge_services(original, services, tasks=None, block='cs_services'):
     """Services anhand ihres Namens ergänzen/aktualisieren; Rest exakt erhalten."""
-    start, end = services_span(original)
+    start, end = services_span(original, block)
     tokens = [m for m in TOKEN.finditer(original, start, end)
               if not m.group().isspace() and not m.group().startswith(('#', '//', '/*'))]
     entries = {}
-    i = 3  # services = {
+    entry_spans = {}
+    i = 3  # cs_services = {
     while i < len(tokens) - 1:
         if tokens[i].group() == ',':
             i += 1
             continue
         key = tokens[i].group()
+        entry_start = tokens[i].start()
         name = json.loads(key) if key.startswith('"') else key
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*', name):
             raise ValueError(f'Ungültiger Service-Name im Ziel: {name}')
@@ -225,9 +264,23 @@ def merge_services(original, services):
                 nesting -= 1
             i += 1
         entries[name] = (first, tokens[i - 1].end())
+        entry_end = tokens[i - 1].end()
+        if i < len(tokens) and tokens[i].group() == ',':
+            entry_end = tokens[i].end()
+        entry_spans[name] = (entry_start, entry_end)
     changes = []
     additions = []
     for name, service in services.items():
+        task = (tasks or {}).get(name)
+        if task == 'add' and name in entries:
+            raise ValueError(f'{name}: Service bereits vorhanden; task=add nicht möglich')
+        if task in ('modify', 'delete') and name not in entries:
+            raise ValueError(f'{name}: Service nicht vorhanden; task={task} nicht möglich')
+        if task == 'delete':
+            first, last = entry_spans[name]
+            changes.append((first, last, ''))
+            LOG.info('%s: Service wird gelöscht', name)
+            continue
         rendered = hcl(service, 1)
         if name in entries:
             first, last = entries[name]
@@ -275,13 +328,14 @@ def write_result(target, original, updated):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, epilog='Ergänzt neue Services und aktualisiert gleichnamige Services. Andere Services bleiben erhalten.')
+    parser = argparse.ArgumentParser(description=__doc__, epilog='Verarbeitet task=add/modify/delete. Ohne task werden Services ergänzt oder aktualisiert. Andere Services bleiben erhalten.')
     parser.add_argument('input', type=Path, help='JSON-Datei gemäß services.schema.json')
-    parser.add_argument('--site', required=True, choices=('wi', 'mz'), help='Lokaler Standort')
+    parser.add_argument('--site', required=True, choices=('wi', 'mz', 'voh'), help='Lokaler Standort')
     parser.add_argument('--local-ip', '--local_ip', required=True, help='Lokaler IPv4-Bereich, z. B. 10.96.37.x oder 10.96.37.0/24')
     parser.add_argument('--remote-ip', '--remote_ip', required=True, help='Entfernter IPv4-Bereich')
     parser.add_argument('--output', type=Path, default=ROOT.parent / 'environments/ns-test/terraform.tfvars')
-    parser.add_argument('--dry-run', action='store_true', help='Validieren und services-Block auf stdout ausgeben; keine Dateien ändern')
+    parser.add_argument('--dry-run', action='store_true', help='Validieren und cs_services-Block auf stdout ausgeben; keine Dateien ändern')
+    parser.add_argument('--gslb', action='store_true', help='Zusätzlich gslb_services importieren')
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     try:
@@ -291,10 +345,16 @@ def main(argv=None):
         services = convert(data, args.site, network(args.local_ip), network(args.remote_ip))
         target = args.output.resolve(strict=True)
         original = target.read_text(encoding='utf-8')
-        updated = merge_services(original, services)
+        tasks = {name: service.get('task') for name, service in data['services'].items()}
+        updated = merge_services(original, services, tasks)
+        if args.gslb:
+            updated = merge_services(updated, convert_gslb(data, services), tasks, 'gslb_services')
         if args.dry_run:
             start, end = services_span(updated)
             print(updated[start:end])
+            if args.gslb:
+                start, end = services_span(updated, 'gslb_services')
+                print(updated[start:end])
             LOG.info('Probelauf erfolgreich: %d Services; keine Dateien geändert', len(services))
         elif updated == original:
             LOG.info('Keine Änderungen erforderlich')

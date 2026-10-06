@@ -76,6 +76,10 @@
           "type": "string",
           "enum": ["delete", "add", "modify"]
         },
+        "servicetype": {
+          "type": "string",
+          "minLength": 1
+        },
         "fqdn": {
           "type": "string"
         },

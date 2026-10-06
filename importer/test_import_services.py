@@ -73,20 +73,20 @@ class ImportTests(unittest.TestCase):
         self.assertEqual(len(converted['service-1']['portgroups']['portgroup001']['local_members']), 1)
 
     def test_preserve_other_settings_and_escape(self):
-        prefix = '# services = {}\nsecret = "brace } and \\\" quote"\n'
+        prefix = '# cs_services = {}\nsecret = "brace } and \\\" quote"\n'
         suffix = '\nother = { nested = "hello" }\n'
-        original = prefix + 'services = { old = { value = "}" /* } */ } }' + suffix
+        original = prefix + 'cs_services = { old = { value = "}" /* } */ } }' + suffix
         updated = importer.merge_services(original, {'example': {'value': '${literal}%{literal}'}})
         self.assertTrue(updated.startswith(prefix))
         self.assertTrue(updated.endswith(suffix))
         self.assertIn('$${literal}%%{literal}', updated)
         self.assertIn('old = { value = "}" /* } */ }', updated)
-        for invalid in ('services = {}\nservices = {}', 'services = {', 'value = <<EOF\nservices = {}\nEOF'):
+        for invalid in ('cs_services = {}\ncs_services = {}', 'cs_services = {', 'value = <<EOF\ncs_services = {}\nEOF'):
             with self.assertRaises(ValueError):
                 importer.merge_services(invalid, {})
 
     def test_merge_updates_and_preserves_unrelated_services(self):
-        original = ('services = {\n'
+        original = ('cs_services = {\n'
                     '  # keep this comment\n'
                     '  untouched = { value = "keep" },\n'
                     '  "existing" = { value = "old" },\n'
@@ -100,7 +100,7 @@ class ImportTests(unittest.TestCase):
         self.assertTrue(updated.endswith('\nother = "keep"\n'))
         self.assertEqual(importer.merge_services(updated, incoming), updated)
         with self.assertRaisesRegex(ValueError, 'Doppelter Service'):
-            importer.merge_services('services = { same = {} "same" = {} }', incoming)
+            importer.merge_services('cs_services = { same = {} "same" = {} }', incoming)
 
     def test_change_report_shows_old_new_and_removed_content(self):
         before = {'cs_vip': '192.0.2.1', 'portgroups': {
@@ -110,7 +110,7 @@ class ImportTests(unittest.TestCase):
         after = {'cs_vip': '192.0.2.2', 'portgroups': {
             'portgroup001': {'ports': [8080], 'local_members': [
                 {'server_name': 'new-server', 'server_ip': '10.96.37.2'}]}}}
-        original = 'secret = "do-not-log"\nservices = ' + importer.hcl({'example': before})
+        original = 'secret = "do-not-log"\ncs_services = ' + importer.hcl({'example': before})
         with self.assertLogs('importer', level='INFO') as captured:
             updated = importer.merge_services(original, {'example': after})
         report = '\n'.join(captured.output)
@@ -130,7 +130,7 @@ class ImportTests(unittest.TestCase):
     def test_cli_backup_dry_run_and_repeat(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory) / 'terraform.tfvars'
-            original = 'other = "keep"\nservices = {}\n'
+            original = 'other = "keep"\ncs_services = {}\n'
             target.write_text(original)
             target.chmod(0o600)
             args = [str(importer.ROOT / 'services.example.json'), '--site', 'wi',
