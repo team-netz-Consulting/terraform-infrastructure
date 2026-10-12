@@ -1,3 +1,6 @@
+# Datei        : variables.tf
+# Dateiversion : 2026.10.12.1342
+
 # Die Anmeldedaten werden ueber TF_VAR_alteon_username und
 # TF_VAR_alteon_password bereitgestellt.
 variable "alteon_username" {

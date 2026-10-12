@@ -1,3 +1,6 @@
+# Datei        : variables.tf
+# Dateiversion : 2026.10.12.1342
+
 # Endpoint und Anmeldedaten koennen als TF_VAR_netscaler_endpoint,
 # TF_VAR_netscaler_username und TF_VAR_netscaler_password gesetzt werden.
 variable "netscaler_endpoint" {

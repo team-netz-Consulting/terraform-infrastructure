@@ -1,3 +1,6 @@
+# Datei        : monitors.tf
+# Dateiversion : 2026.10.12.1342
+
 /*
  * Gemeinsame Monitore für CS- und LB-Services.
  * Intervalle und Antwortzeitlimits werden in Sekunden angegeben.

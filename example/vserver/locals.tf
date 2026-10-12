@@ -1,3 +1,6 @@
+# Datei        : locals.tf
+# Dateiversion : 2026.10.12.1342
+
 locals {
   backend_services = concat(
     [for name, service in var.cs_services : merge(service, {

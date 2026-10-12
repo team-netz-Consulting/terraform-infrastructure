@@ -7,7 +7,7 @@ Aus dem Repository-Verzeichnis zunächst einen Probelauf starten:
 
 ```bash
 python3 importer/import_services.py importer/services.example.json \
-  --site wi --local-ip 10.96.37.x --remote-ip 10.96.5.x --dry-run
+  --site wi --local-ip 192.168.101.x --remote-ip 192.168.102.x --dry-run
 ```
 
 Zum Schreiben `--dry-run` weglassen. Standardziel ist
@@ -18,7 +18,7 @@ Für MZ werden die Netze vertauscht:
 
 ```bash
 python3 importer/import_services.py daten.json \
-  --site mz --local-ip 10.96.5.0/24 --remote-ip 10.96.37.0/24 --dry-run
+  --site mz --local-ip 192.168.102.0/24 --remote-ip 192.168.101.0/24 --dry-run
 ```
 
 - `--site` bestimmt `local_site`, den jeweils anderen Standort als `remote_site`

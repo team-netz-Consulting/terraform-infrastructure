@@ -1,3 +1,6 @@
+# Datei        : provider.tf
+# Dateiversion : 2026.10.12.1342
+
 terraform {
   required_providers {
     alteon = {

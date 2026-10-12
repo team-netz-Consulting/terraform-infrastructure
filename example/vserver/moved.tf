@@ -1,3 +1,6 @@
+# Datei        : moved.tf
+# Dateiversion : 2026.10.12.1342
+
 # Migration der bestehenden CS-Instanzen auf Schlüssel mit cs:-Präfix.
 # NetScaler-Objektnamen bleiben unverändert.
 
