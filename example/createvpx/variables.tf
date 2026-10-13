@@ -84,3 +84,61 @@ variable "vpx_instances" {
   ])
   }))
 }
+
+variable "adc_username" {
+  description = "NITRO-Benutzer auf beiden VPX, entsprechend dem SDX-Profil"
+  type        = string
+  default     = "nsroot"
+}
+
+variable "adc_password" {
+  description = "NITRO-Passwort auf beiden VPX; nicht das SDX-Passwort"
+  type        = string
+  sensitive   = true
+  default     = ""
+  nullable    = false
+}
+
+variable "rpc_node_password" {
+  description = "Gemeinsames RPC-Passwort für die HA-Peer-Konfiguration"
+  type        = string
+  sensitive   = true
+  default     = ""
+  nullable    = false
+}
+
+variable "adc_insecure_skip_verify" {
+  description = "TLS-Zertifikatsprüfung der VPX überspringen"
+  type        = bool
+  default     = false
+}
+
+variable "ha" {
+  description = "Optionales HA-Paar aus zwei VPX-Namen im selben Netz (ohne INC)"
+  type = object({
+    enabled = optional(bool, false)
+    nodes   = tuple([string, string])
+    peer_id = optional(number, 1)
+    snip = optional(object({
+      ip_address = string
+      netmask    = string
+    }))
+  })
+  default = {
+    enabled = false
+    nodes   = ["adc123", "adc124"]
+    peer_id = 1
+    snip    = null
+  }
+  nullable = false
+
+  validation {
+    condition     = var.ha.nodes[0] != var.ha.nodes[1]
+    error_message = "Für HA müssen zwei unterschiedliche VPX-Namen angegeben werden."
+  }
+
+  validation {
+    condition     = var.ha.peer_id >= 1 && var.ha.peer_id <= 64 && floor(var.ha.peer_id) == var.ha.peer_id
+    error_message = "Die HA-Peer-ID muss eine ganze Zahl zwischen 1 und 64 sein."
+  }
+}

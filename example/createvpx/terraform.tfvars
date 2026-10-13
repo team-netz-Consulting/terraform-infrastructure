@@ -120,3 +120,22 @@ vpx_instances = {
     ]
   }
 }
+
+# Zugangsdaten der VPX aus dem SDX-Profil (nicht der SDX-Appliance).
+adc_username             = "nsroot"
+adc_password             = "" # Hier lokal das VPX-Passwort eintragen.
+adc_insecure_skip_verify = false
+rpc_node_password        = "" # Hier lokal das gemeinsame RPC-Passwort eintragen.
+
+# Erst nach dem Start beider VPX auf true setzen.
+ha = {
+  enabled = true
+  nodes   = ["adc123", "adc124"]
+  peer_id = 1
+  snip    = null
+  # Optional, für HA im selben Netz:
+  snip = {
+     ip_address = "10.1.1.197" # Durch die gewünschte freie SNIP ersetzen.
+     netmask    = "255.255.255.0"
+  }
+}
