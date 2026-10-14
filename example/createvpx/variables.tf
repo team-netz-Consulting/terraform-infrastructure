@@ -1,21 +1,12 @@
-variable "netscaler_host" {
-  description = "NITRO-API-Endpunkt der NetScaler-SDX-Appliance"
-  type        = string
-}
-
-variable "netscaler_username" {
-  type      = string
+variable "sdx1" {
+  description = "Erste SDX mit Host und Zugangsdaten"
+  type = object({
+    host                 = string
+    username             = string
+    password             = string
+    insecure_skip_verify = optional(bool, false)
+  })
   sensitive = true
-}
-
-variable "netscaler_password" {
-  type      = string
-  sensitive = true
-}
-
-variable "netscaler_insecure_skip_verify" {
-  type    = bool
-  default = false
 }
 
 variable "vpx_instances" {

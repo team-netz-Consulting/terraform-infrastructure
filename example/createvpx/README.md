@@ -27,8 +27,8 @@ sdx2 = {
 }
 ```
 
-SDX 1 verwendet weiterhin `netscaler_host`, `netscaler_username`,
-`netscaler_password` und `netscaler_insecure_skip_verify`. Für eine VPX nur auf
+SDX 1 verwendet das Objekt `sdx1` mit `host`, `username`,
+`password` und `insecure_skip_verify`, analog zu `sdx2`. Für eine VPX nur auf
 SDX 2 bleibt SDX 1 ohne Ressourcen. Image, Profil und Interfaces müssen auf der
 jeweiligen Ziel-SDX existieren. Ohne HA werden keine ADC-Ressourcen und keine
 NITRO-Bereitschaftsprüfung angelegt. Bei aktiviertem HA müssen beide in

@@ -19,21 +19,21 @@ terraform {
   }
 }
 
+
 provider "netscalersdx" {
-  alias                = "sdx1"
-  host                 = var.netscaler_host
-  username             = var.netscaler_username
-  password             = var.netscaler_password
-  ssl_verify           = !var.netscaler_insecure_skip_verify
+  host                 = var.sdx1.host
+  username             = var.sdx1.username
+  password             = var.sdx1.password
+  ssl_verify           = false
 }
 
 # Ohne zweite SDX wird dieser ungenutzte Provider mit SDX-1-Werten konfiguriert.
 provider "netscalersdx" {
   alias      = "sdx2"
-  host       = var.sdx2 != null ? var.sdx2.host : var.netscaler_host
-  username   = var.sdx2 != null ? var.sdx2.username : var.netscaler_username
-  password   = var.sdx2 != null ? var.sdx2.password : var.netscaler_password
-  ssl_verify = var.sdx2 != null ? !var.sdx2.insecure_skip_verify : !var.netscaler_insecure_skip_verify
+  host       = var.sdx2 != null ? var.sdx2.host : var.sdx1.host
+  username   = var.sdx2 != null ? var.sdx2.username : var.sdx1.username
+  password   = var.sdx2 != null ? var.sdx2.password : var.sdx1.password
+  ssl_verify = false
 }
 
 # Die ADC-Provider verbinden sich direkt mit den VPX, nicht mit der SDX.

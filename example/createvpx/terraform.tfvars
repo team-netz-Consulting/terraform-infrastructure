@@ -1,8 +1,9 @@
-netscaler_host     = "https://192.168.101.88"
-netscaler_username = "nsroot"
-netscaler_password = "Server2016"
-
-netscaler_insecure_skip_verify = false
+sdx1 = {
+  host                 = "https://192.168.101.88"
+  #username             = "nsroot"
+  #password             = "Server2016"
+  insecure_skip_verify = false
+}
 
 # Für eine zweite SDX diesen Block ausfüllen und aktivieren.
 # sdx2 = {
