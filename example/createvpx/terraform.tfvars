@@ -4,8 +4,18 @@ netscaler_password = "Server2016"
 
 netscaler_insecure_skip_verify = false
 
+# Für eine zweite SDX diesen Block ausfüllen und aktivieren.
+# sdx2 = {
+#   host                 = "https://<SDX-2-IP>"
+#   username             = "nsroot"
+#   password             = ""
+#   insecure_skip_verify = false
+# }
+
+# Ein Eintrag erstellt eine VPX; zwei Einträge erstellen zwei VPX.
 vpx_instances = {
   adc123 = {
+    sdx                        = "sdx1"
     ip_address                 = "10.1.1.195"
     ipv4_address               = "10.1.1.195"
     netmask                    = "255.255.255.0"
@@ -63,6 +73,7 @@ vpx_instances = {
     ]
   }
   adc124 = {
+    sdx                        = "sdx1" # Für eine andere SDX auf "sdx2" setzen.
     ip_address                 = "10.1.1.196"
     ipv4_address               = "10.1.1.196"
     netmask                    = "255.255.255.0"
@@ -132,7 +143,6 @@ ha = {
   enabled = true
   nodes   = ["adc123", "adc124"]
   peer_id = 1
-  snip    = null
   # Optional, für HA im selben Netz:
   snip = {
      ip_address = "10.1.1.197" # Durch die gewünschte freie SNIP ersetzen.

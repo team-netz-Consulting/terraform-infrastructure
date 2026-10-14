@@ -6,7 +6,42 @@
 Diese Konfiguration setzt neue VPX im selben Netz mit den Standard-HA-
 Einstellungen (Synchronisation und Propagation aktiviert, INC deaktiviert) voraus.
 
-## Benötigte Angaben
+## Anzahl der VPX und Ziel-SDX
+
+Jeder Eintrag in `vpx_instances` erstellt eine VPX. Das Attribut `sdx` wählt
+`"sdx1"` (Standard) oder `"sdx2"`. Die VPX-Einstellungen werden über dasselbe
+Modul auf der gewählten SDX provisioniert.
+
+- **Eine VPX:** Nur den gewünschten Eintrag in `vpx_instances` behalten und
+  `ha.enabled = false` setzen. Alternativ den gesamten `ha`-Block weglassen.
+- **Zwei VPX auf einer SDX:** Beide Einträge mit `sdx = "sdx1"` konfigurieren.
+- **Zwei VPX auf unterschiedlichen SDX:** Einen Eintrag auf `"sdx1"`, den
+  anderen auf `"sdx2"` setzen und die zweite SDX konfigurieren:
+
+```hcl
+sdx2 = {
+  host                 = "https://<SDX-2-IP>"
+  username             = "nsroot"
+  password             = "<SDX-2-Passwort>"
+  insecure_skip_verify = false
+}
+```
+
+SDX 1 verwendet weiterhin `netscaler_host`, `netscaler_username`,
+`netscaler_password` und `netscaler_insecure_skip_verify`. Für eine VPX nur auf
+SDX 2 bleibt SDX 1 ohne Ressourcen. Image, Profil und Interfaces müssen auf der
+jeweiligen Ziel-SDX existieren. Ohne HA werden keine ADC-Ressourcen und keine
+NITRO-Bereitschaftsprüfung angelegt. Bei aktiviertem HA müssen beide in
+`ha.nodes` genannten VPX vorhanden sein.
+
+Nach dem Umbau `terraform init` ausführen, um das lokale Modul einzulesen.
+Der `moved`-Block übernimmt bisherige VPX-State-Adressen automatisch in das
+SDX-1-Modul. Eine bereits existierende VPX sollte dabei zunächst `sdx = "sdx1"`
+behalten. Das Umstellen auf `"sdx2"` verschiebt keine laufende VM zwischen den
+Appliances: Terraform plant dann den Abbau auf SDX 1 und die Erstellung auf
+SDX 2. Vor einem Apply den Plan prüfen.
+
+## Benötigte Angaben für HA
 
 - Zwei VPX-Namen und deren unterschiedliche, gegenseitig erreichbare NSIPs.
 - Gemeinsame VPX-Zugangsdaten aus dem SDX-Profil: `adc_username`, `adc_password`.
@@ -27,7 +62,7 @@ Abfrage von `/nitro/v1/config/nsconfig`. Die Prüfung beginnt sofort und wird
 alle 25 Sekunden wiederholt; nach maximal 10 Minuten bricht sie mit einem
 Fehler ab. Erst nach erfolgreicher Prüfung beider Nodes startet die
 HA-Konfiguration. Auf dem Terraform-Rechner muss Python 3 installiert sein.
-Änderungen oder Neuerstellungen der VPX lösen die Prüfung erneut aus.
+Änderungen an der VPX-Konfiguration oder ihren Ressourcen-IDs lösen die Prüfung erneut aus.
 Nach Ergänzung des Null-Providers einmal `terraform init` ausführen.
 
 `depends_on` ersetzt keine Bereitschaftsprüfung: ADC-Provider können schon beim

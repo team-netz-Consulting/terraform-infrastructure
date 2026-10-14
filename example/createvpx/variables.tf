@@ -21,6 +21,7 @@ variable "netscaler_insecure_skip_verify" {
 variable "vpx_instances" {
   description = "VPX-Instanzen, indiziert nach eindeutigem Instanznamen"
   type = map(object({
+    sdx                        = optional(string, "sdx1")
     ip_address                 = string
     ipv4_address               = optional(string)
     netmask                    = string
@@ -83,6 +84,11 @@ variable "vpx_instances" {
     }
   ])
   }))
+
+  validation {
+    condition     = alltrue([for instance in values(var.vpx_instances) : contains(["sdx1", "sdx2"], instance.sdx)])
+    error_message = "Jede VPX muss sdx1 oder sdx2 zugeordnet sein."
+  }
 }
 
 variable "adc_username" {
@@ -141,4 +147,16 @@ variable "ha" {
     condition     = var.ha.peer_id >= 1 && var.ha.peer_id <= 64 && floor(var.ha.peer_id) == var.ha.peer_id
     error_message = "Die HA-Peer-ID muss eine ganze Zahl zwischen 1 und 64 sein."
   }
+}
+
+variable "sdx2" {
+  description = "Optionale zweite SDX; erforderlich für VPX mit sdx = sdx2"
+  type = object({
+    host                 = string
+    username             = string
+    password             = string
+    insecure_skip_verify = optional(bool, false)
+  })
+  default   = null
+  sensitive = true
 }
