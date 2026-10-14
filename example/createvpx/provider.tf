@@ -22,8 +22,8 @@ terraform {
 
 provider "netscalersdx" {
   host                 = var.sdx1.host
-  username             = var.sdx1.username
-  password             = var.sdx1.password
+  username             = var.sdx1.username != null ? var.sdx1.username : var.netscaler_username
+  password             = var.sdx1.password != null ? var.sdx1.password : var.netscaler_password
   ssl_verify           = false
 }
 
@@ -31,8 +31,8 @@ provider "netscalersdx" {
 provider "netscalersdx" {
   alias      = "sdx2"
   host       = var.sdx2 != null ? var.sdx2.host : var.sdx1.host
-  username   = var.sdx2 != null ? var.sdx2.username : var.sdx1.username
-  password   = var.sdx2 != null ? var.sdx2.password : var.sdx1.password
+  username   = var.sdx2 != null ? (var.sdx2.username != null ? var.sdx2.username : var.netscaler_username) : (var.sdx1.username != null ? var.sdx1.username : var.netscaler_username)
+  password   = var.sdx2 != null ? (var.sdx2.password != null ? var.sdx2.password : var.netscaler_password) : (var.sdx1.password != null ? var.sdx1.password : var.netscaler_password)
   ssl_verify = false
 }
 

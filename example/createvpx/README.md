@@ -28,7 +28,12 @@ sdx2 = {
 ```
 
 SDX 1 verwendet das Objekt `sdx1` mit `host`, `username`,
-`password` und `insecure_skip_verify`, analog zu `sdx2`. Für eine VPX nur auf
+`password` und `insecure_skip_verify`, analog zu `sdx2`.
+`username` und `password` sind optional und haben Vorrang vor den gemeinsamen
+Variablen `netscaler_username` und `netscaler_password`, die das Skript über
+`TF_VAR_netscaler_username` und `TF_VAR_netscaler_password` befüllen kann.
+Die SDX-Provider verwenden derzeit fest `ssl_verify = false`.
+Für eine VPX nur auf
 SDX 2 bleibt SDX 1 ohne Ressourcen. Image, Profil und Interfaces müssen auf der
 jeweiligen Ziel-SDX existieren. Ohne HA werden keine ADC-Ressourcen und keine
 NITRO-Bereitschaftsprüfung angelegt. Bei aktiviertem HA müssen beide in

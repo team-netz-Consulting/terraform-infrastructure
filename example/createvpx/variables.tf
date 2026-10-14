@@ -1,9 +1,21 @@
+variable "netscaler_username" {
+  type      = string
+  sensitive = true
+  default   = null
+}
+
+variable "netscaler_password" {
+  type      = string
+  sensitive = true
+  default   = null
+}
+
 variable "sdx1" {
   description = "Erste SDX mit Host und Zugangsdaten"
   type = object({
     host                 = string
-    username             = string
-    password             = string
+    username             = optional(string)
+    password             = optional(string)
     insecure_skip_verify = optional(bool, false)
   })
   sensitive = true
@@ -144,8 +156,8 @@ variable "sdx2" {
   description = "Optionale zweite SDX; erforderlich für VPX mit sdx = sdx2"
   type = object({
     host                 = string
-    username             = string
-    password             = string
+    username             = optional(string)
+    password             = optional(string)
     insecure_skip_verify = optional(bool, false)
   })
   default   = null
