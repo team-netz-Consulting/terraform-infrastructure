@@ -20,6 +20,7 @@ terraform {
 }
 
 provider "netscalersdx" {
+  alias                = "sdx1"
   host                 = var.netscaler_host
   username             = var.netscaler_username
   password             = var.netscaler_password

@@ -1,7 +1,7 @@
 module "sdx1" {
   source = "./modules/vpx"
   providers = {
-    netscalersdx = netscalersdx
+    netscalersdx = netscalersdx.sdx1
   }
   vpx_instances = { for name, instance in var.vpx_instances : name => instance if instance.sdx == "sdx1" }
 }
