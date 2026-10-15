@@ -1,11 +1,46 @@
 # Datei        : monitors.tf
-# Dateiversion : 2026.10.12.1342
+# Dateiversion : 2026.10.12.1029
+
+
+variable "monitors" {
+  description = "Zentrale Monitor-Definitionen; der Map-Schlüssel ist der Monitorname auf dem ADC. HTTPS: type = HTTP und secure = YES."
+  default     = {}
+
+  type = map(object({
+    type           = string
+    interval       = optional(number)
+    resptimeout    = optional(number)
+    retries        = optional(number)
+    destip         = optional(string)
+    destport       = optional(number)
+    secure         = optional(string)
+    httprequest    = optional(string)
+    respcode       = optional(list(string))
+    customheaders  = optional(string)
+    send           = optional(string)
+    recv           = optional(string)
+    lrtm           = optional(string)
+    successretries = optional(number)
+    downtime       = optional(number)
+    query          = optional(string)
+    querytype      = optional(string)
+    scriptname     = optional(string)
+    dispatcherip   = optional(string)
+    dispatcherport = optional(number)
+    password       = optional(string)
+    basedn         = optional(string)
+    binddn         = optional(string)
+    filter         = optional(string)
+  }))
+}
 
 /*
  * Gemeinsame Monitore für CS- und LB-Services.
  * Intervalle und Antwortzeitlimits werden in Sekunden angegeben.
  * Ohne destip/destport wird das jeweilige Servicegroup-Mitglied geprüft.
  * Zeiteinheiten nur zusammen mit dem zugehörigen optionalen Wert senden.
+ * units[2..3] -> MSEC, SEC,MIN,
+ *
  */
 resource "citrixadc_lbmonitor" "monitor" {
   for_each = var.monitors
@@ -38,6 +73,29 @@ resource "citrixadc_lbmonitor" "monitor" {
   basedn         = each.value.basedn
   binddn         = each.value.binddn
   filter         = each.value.filter
+}
+
+locals {
+  # Ein Binding pro Servicegroup und Monitor, unabhängig von der Listenreihenfolge.
+  local_monitor_bindings = merge([
+    for port_key, config in local.port_configs : {
+      for monitor in config.monitors :
+      jsonencode([port_key, monitor]) => {
+        port_key     = port_key
+        monitor_name = monitor
+      }
+    }
+  ]...)
+
+  remote_monitor_bindings = merge([
+    for port_key, config in local.remote_port_configs : {
+      for monitor in config.monitors :
+      jsonencode([port_key, monitor]) => {
+        port_key     = port_key
+        monitor_name = monitor
+      }
+    }
+  ]...)
 }
 
 resource "citrixadc_servicegroup_lbmonitor_binding" "local" {

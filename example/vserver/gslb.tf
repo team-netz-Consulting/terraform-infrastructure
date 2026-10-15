@@ -1,5 +1,5 @@
 # Datei        : gslb.tf
-# Dateiversion : 2026.10.12.1342
+# Dateiversion : 2026.10.12.1026
 
 variable "gslb_services" {
   description = "GSLB-vServer mit Services an vorhandenen GSLB-Sites und automatisch erzeugten Domain- und Service-Bindings."
