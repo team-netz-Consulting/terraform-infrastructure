@@ -158,7 +158,7 @@ def convert_gslb(data, services):
             'environment': service['environment'],
             'servicetype': service.get('servicetype', 'TCP'),
             'dnsrecordtype': 'A',
-            'lbmethod': 'ROUNDROBIN',
+            'lbmethod': 'STATICPROXIMITY',
             'edr': 'ENABLED',
             'tolerance': '0',
             'services': {
