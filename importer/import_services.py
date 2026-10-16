@@ -12,6 +12,8 @@ import re
 import shutil
 import tempfile
 
+#Todo: bei servernamen in loawer case convertieren
+
 LOG = logging.getLogger('importer')
 ROOT = Path(__file__).resolve().parent
 

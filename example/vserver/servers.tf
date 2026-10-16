@@ -2,6 +2,7 @@
 # Dateiversion : 2026.10.12.1342
 
 locals {
+
   /*
    * Alle lokalen und Remote-Mitglieder aus allen Services und Portgruppen.
    *
@@ -54,7 +55,7 @@ locals {
   servers = {
     for server_name, members in local.server_groups :
     server_name => {
-      name = server_name
+      name = format("srv_%s", trimprefix(server_name, "srv_"))
       ip   = members[0].server_ip
     }
   }
