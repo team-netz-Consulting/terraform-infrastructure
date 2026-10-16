@@ -12,8 +12,6 @@ import re
 import shutil
 import tempfile
 
-#Todo: bei servernamen in loawer case convertieren
-
 LOG = logging.getLogger('importer')
 ROOT = Path(__file__).resolve().parent
 
@@ -121,6 +119,7 @@ def convert(data, site, local_net, remote_net, override_lokalcheck=False):
             members = {'local_members': [], 'remote_members': []}
             seen = set()
             for member in group['members']:
+                member = {**member, 'server_name': member['server_name'].lower()}
                 server, address = member['server_name'], member['server_ip']
                 if server in servers and servers[server] != address:
                     raise ValueError(f'{context}: Server {server} hat widersprüchliche IP-Adressen')
