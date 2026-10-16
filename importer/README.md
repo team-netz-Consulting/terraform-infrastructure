@@ -50,7 +50,13 @@ python3 importer/import_services.py daten.json \
 - Identische Member innerhalb einer Portgruppe werden mit Warnung dedupliziert.
   Fehlende Remote-Member und mehrfach verwendete CS-VIPs erzeugen Warnungen.
 - Das mitgelieferte Beispiel funktioniert für WI. Für MZ fehlen in den jeweiligen
-  `portgroup002` lokale Mitglieder; der Import wird deshalb abgelehnt.
+  `portgroup002` lokale Mitglieder. Mit `--override_lokalcheck` (alternativ
+  `--override-lokalcheck`) werden in solchen Portgruppen alle vorhandenen
+  Remote-Member als lokale Mitglieder verwendet und aus `remote_members`
+  entfernt. Die Übernahme erzeugt eine Warnung. Portgruppen mit lokalen
+  Mitgliedern bleiben unverändert; alle anderen Prüfungen bleiben aktiv.
+  Ohne diesen Schalter wird der Import weiterhin abgelehnt.
+  Bei direktem Funktionsaufruf: `convert(..., override_lokalcheck=True)`.
 - Das Ziel muss einen literalen `cs_services = { ... }`-Block enthalten. Heredocs
   im Ziel werden nicht unterstützt und führen zum Abbruch.
 - Infos und Warnungen stehen auf stderr, die Vorschau des zusammengeführten Services-Blocks auf

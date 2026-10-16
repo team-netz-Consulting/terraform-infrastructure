@@ -12,6 +12,24 @@ import import_services as importer
 class ImportTests(unittest.TestCase):
     def setUp(self):
         self.data = json.loads((importer.ROOT / 'services.example.json').read_text())
+        # Stabile Testdaten, unabhängig von den anpassbaren Beispielwerten.
+        service = copy.deepcopy(next(iter(self.data['services'].values())))
+        service.pop('task', None)
+        service.update(cs_vip_wi='192.168.102.91', cs_vip_mz='192.168.101.91')
+        service['portgroups'] = {
+            'portgroup001': {'ports': [80, 443], 'members': [
+                {'server_name': 'srv1_wi', 'server_ip': '10.96.37.21'},
+                {'server_name': 'srv1_mz', 'server_ip': '10.96.5.34'}]},
+            'portgroup002': {'ports': [8080], 'members': [
+                {'server_name': 'srv1_wi_2', 'server_ip': '10.96.37.22'}]},
+        }
+        second = copy.deepcopy(service)
+        second.update(cs_vip_wi='192.168.102.92', cs_vip_mz='192.168.101.92')
+        for group in second['portgroups'].values():
+            for member in group['members']:
+                member['server_name'] = member['server_name'].replace('srv1', 'srv2')
+                member['server_ip'] = str(importer.ipaddress.IPv4Address(member['server_ip']) + 1)
+        self.data = {'services': {'service-1': service, 'service-2': second}}
         self.schema = json.loads((importer.ROOT / 'services.schema.json').read_text())
         self.local = importer.network('10.96.37.x')
         self.remote = importer.network('10.96.5.0/24')
@@ -45,6 +63,28 @@ class ImportTests(unittest.TestCase):
                 importer.validate(data, self.schema, self.schema)
         with self.assertRaisesRegex(ValueError, 'Doppelter JSON'):
             json.loads('{"services": {}, "services": {}}', object_pairs_hook=importer.unique_object)
+
+    def test_override_lokalcheck(self):
+        original = copy.deepcopy(self.data)
+        group = self.data['services']['service-1']['portgroups']['portgroup002']
+        group['members'].append({'server_name': 'extra-wi', 'server_ip': '10.96.37.99'})
+        with self.assertLogs('importer', level='WARNING') as logs:
+            converted = importer.convert(self.data, 'mz', self.remote, self.local,
+                                         override_lokalcheck=True)
+        fallback = converted['service-1']['portgroups']['portgroup002']
+        self.assertEqual(fallback['local_members'], group['members'])
+        self.assertEqual(fallback['remote_members'], [])
+        self.assertTrue(any('override_lokalcheck' in line for line in logs.output))
+        regular = converted['service-1']['portgroups']['portgroup001']
+        self.assertEqual(regular['local_members'][0]['server_ip'], '10.96.5.34')
+        self.assertEqual(regular['remote_members'][0]['server_ip'], '10.96.37.21')
+        self.assertEqual(importer.convert(original, 'wi', self.local, self.remote),
+                         importer.convert(original, 'wi', self.local, self.remote,
+                                          override_lokalcheck=True))
+        group['members'][0]['server_ip'] = '203.0.113.1'
+        with self.assertRaisesRegex(ValueError, 'keinem IP-Bereich'):
+            importer.convert(self.data, 'mz', self.remote, self.local,
+                             override_lokalcheck=True)
 
     def test_networks(self):
         self.assertEqual(self.local, importer.network('10.96.37.0/24'))
@@ -133,7 +173,9 @@ class ImportTests(unittest.TestCase):
             original = 'other = "keep"\ncs_services = {}\n'
             target.write_text(original)
             target.chmod(0o600)
-            args = [str(importer.ROOT / 'services.example.json'), '--site', 'wi',
+            source = Path(directory) / 'services.json'
+            source.write_text(json.dumps(self.data))
+            args = [str(source), '--site', 'wi',
                     '--local-ip', '10.96.37.x', '--remote-ip', '10.96.5.x', '--output', str(target)]
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(importer.main(args + ['--dry-run']), 0)
@@ -153,6 +195,11 @@ class ImportTests(unittest.TestCase):
             args[args.index('10.96.5.x')] = '10.96.37.0/24'
             self.assertEqual(importer.main(args), 1)
             self.assertEqual(target.read_bytes(), before)
+            for flag in ('--override_lokalcheck', '--override-lokalcheck'):
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(importer.main(args + [flag, '--dry-run']), 0)
+                self.assertIn('"10.96.37.21"', output.getvalue())
+                self.assertEqual(target.read_bytes(), before)
 
 
 if __name__ == '__main__':

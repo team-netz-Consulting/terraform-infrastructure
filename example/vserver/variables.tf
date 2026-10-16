@@ -40,3 +40,13 @@ variable "default_lb_vserver" {
   default     = "lvs_dummy_reset"
 }
 
+# -----------------------------------------------------------------------------
+# Save-Konfiguration
+# -----------------------------------------------------------------------------
+
+variable "nssave_timestamp" {
+  description = "Manuell gepflegter Zeitstempel zum Auslösen des Speicherns der NetScaler-Konfiguration."
+  type        = string
+}
+
+ 

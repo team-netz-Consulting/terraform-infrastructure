@@ -88,7 +88,7 @@ def network(text):
     return ipaddress.IPv4Network(text, strict=True)
 
 
-def convert(data, site, local_net, remote_net):
+def convert(data, site, local_net, remote_net, override_lokalcheck=False):
     if local_net.overlaps(remote_net):
         raise ValueError('Lokaler und entfernter IP-Bereich überschneiden sich')
     services = {}
@@ -135,7 +135,12 @@ def convert(data, site, local_net, remote_net):
                 else:
                     raise ValueError(f'{context}: IP {address} ({server}) passt zu keinem IP-Bereich')
             if not members['local_members']:
-                raise ValueError(f'{context}: Keine lokalen Mitglieder für {site}; Terraform verlangt mindestens eines')
+                if not override_lokalcheck or not members['remote_members']:
+                    raise ValueError(f'{context}: Keine lokalen Mitglieder für {site}; Terraform verlangt mindestens eines')
+                members['local_members'] = members['remote_members']
+                members['remote_members'] = []
+                LOG.warning('%s: Keine lokalen Mitglieder für %s; override_lokalcheck übernimmt %d vorhandene Server als lokale Mitglieder',
+                            context, site, len(members['local_members']))
             if not members['remote_members']:
                 LOG.warning('%s: Keine Remote-Mitglieder; Remote-Ressourcen werden nicht erzeugt', context)
             result['portgroups'][group_name] = {'ports': sorted(group['ports']), **members}
@@ -336,13 +341,16 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, default=ROOT.parent / 'environments/ns-test/terraform.tfvars')
     parser.add_argument('--dry-run', action='store_true', help='Validieren und cs_services-Block auf stdout ausgeben; keine Dateien ändern')
     parser.add_argument('--gslb', action='store_true', help='Zusätzlich gslb_services importieren')
+    parser.add_argument('--override_lokalcheck', '--override-lokalcheck', action='store_true',
+                        help='Bei fehlenden lokalen Mitgliedern vorhandene Remote-Server als lokale Mitglieder verwenden')
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     try:
         data = json.loads(args.input.read_text(encoding='utf-8-sig'), object_pairs_hook=unique_object)
         schema = json.loads((ROOT / 'services.schema.json').read_text(encoding='utf-8'))
         validate(data, schema, schema)
-        services = convert(data, args.site, network(args.local_ip), network(args.remote_ip))
+        services = convert(data, args.site, network(args.local_ip), network(args.remote_ip),
+                           override_lokalcheck=args.override_lokalcheck)
         target = args.output.resolve(strict=True)
         original = target.read_text(encoding='utf-8')
         tasks = {name: service.get('task') for name, service in data['services'].items()}
