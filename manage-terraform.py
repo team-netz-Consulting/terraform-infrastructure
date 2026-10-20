@@ -4,8 +4,23 @@
 Dieses Skript ist als plattformunabhaengige Alternative zum bisherigen Bash-Skript
 gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 """
+
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.4.2
+# Build:   20261020-002
+# Changes:
+#   - Vorhandene manage-terraform.conf bleibt bei lokalen Updates erhalten.
+#   - Fehlende Konfigurationsdatei wird aus der Updatequelle uebernommen.
+#
+# Version: 0.4.1
+# Build:   20261020-001
+# Changes:
+#   - Getrennte GitLab-Wurzelgruppen fuer NetScaler und Alteon eingefuehrt.
+#   - Mehrere providerbezogene Terraform-Templates bei der Umgebungserstellung auswaehlbar.
+#   - GitLab-Subgroups beliebiger Tiefe und rekursive Projektlisten unterstuetzt.
+#   - CLI-Shell fuer Git- und providerabhaengige Terraform-Variablen ergaenzt.
+#
 # Version: 0.3.5
 # Build:   20260901-001
 # Changes:
@@ -88,9 +103,11 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.4.1"
-SCRIPT_BUILD = "20261020-001"
+SCRIPT_VERSION = "0.4.2"
+SCRIPT_BUILD = "20261020-002"
 SCRIPT_CHANGELOG = (
+    "Vorhandene manage-terraform.conf bleibt bei lokalen Updates erhalten.",
+    "Fehlende Konfigurationsdatei wird aus der Updatequelle uebernommen.",
     "Getrennte GitLab-Wurzelgruppen fuer NetScaler und Alteon eingefuehrt.",
     "Mehrere providerbezogene Terraform-Templates bei der Umgebungserstellung auswaehlbar.",
     "GitLab-Subgroups beliebiger Tiefe und rekursive Projektlisten unterstuetzt.",
@@ -381,6 +398,7 @@ class TerraformManager:
     def apply_local_update(self, source_dir: Path) -> None:
         managed_paths = (
             "manage-terraform.py",
+            "manage-terraform.conf",
             "manage-terraform.sh",
             "terraform-cli.sh",
             "README.md",
@@ -414,6 +432,10 @@ class TerraformManager:
                 if not staged.exists():
                     continue
                 destination = self.script_dir / relative_name
+                if relative_name == "manage-terraform.conf" and (
+                    destination.exists() or destination.is_symlink()
+                ):
+                    continue
                 backup = backup_dir / relative_name
                 if destination.exists():
                     backup.parent.mkdir(parents=True, exist_ok=True)
