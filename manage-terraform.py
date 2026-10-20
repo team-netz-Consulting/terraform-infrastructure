@@ -88,8 +88,8 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.4.0"
-SCRIPT_BUILD = "20260907-003"
+SCRIPT_VERSION = "0.4.1"
+SCRIPT_BUILD = "20261020-001"
 SCRIPT_CHANGELOG = (
     "Getrennte GitLab-Wurzelgruppen fuer NetScaler und Alteon eingefuehrt.",
     "Mehrere providerbezogene Terraform-Templates bei der Umgebungserstellung auswaehlbar.",
