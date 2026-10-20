@@ -12,6 +12,8 @@ import re
 import shutil
 import tempfile
 
+__version__ = '1.0.0'
+
 LOG = logging.getLogger('importer')
 ROOT = Path(__file__).resolve().parent
 
@@ -335,6 +337,7 @@ def write_result(target, original, updated):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, epilog='Verarbeitet task=add/modify/delete. Ohne task werden Services ergänzt oder aktualisiert. Andere Services bleiben erhalten.')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     parser.add_argument('input', type=Path, help='JSON-Datei gemäß services.schema.json')
     parser.add_argument('--site', required=True, choices=('wi', 'mz', 'voh'), help='Lokaler Standort')
     parser.add_argument('--local-ip', '--local_ip', required=True, help='Lokaler IPv4-Bereich, z. B. 10.96.37.x oder 10.96.37.0/24')
@@ -346,6 +349,7 @@ def main(argv=None):
                         help='Bei fehlenden lokalen Mitgliedern vorhandene Remote-Server als lokale Mitglieder verwenden')
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    LOG.info('Service-Importer Version %s', __version__)
     try:
         data = json.loads(args.input.read_text(encoding='utf-8-sig'), object_pairs_hook=unique_object)
         schema = json.loads((ROOT / 'services.schema.json').read_text(encoding='utf-8'))
