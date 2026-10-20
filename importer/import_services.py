@@ -179,7 +179,7 @@ def convert_gslb(data, services):
                 for location in ('local', 'remote')
             },
             'gslb_domains': {
-                'primary': {'domainname': service['fqdn'], 'ttl': 60}
+                'primary': {'domainname': service['fqdn'], 'ttl': 5}
             } if service.get('fqdn') else {},
         }
     return result
