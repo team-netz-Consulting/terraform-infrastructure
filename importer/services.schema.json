@@ -85,7 +85,7 @@
         },
         "environment": {
           "type": "string",
-          "enum": ["e2a", "e2p", "e2t"]
+          "enum": ["e2a", "e2p", "e2t", "etl"]
         },
         "stage": {
           "type": "string",
