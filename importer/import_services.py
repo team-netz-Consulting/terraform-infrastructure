@@ -179,11 +179,10 @@ def convert_gslb(data, services):
                 for location in ('local', 'remote')
             },
             'gslb_domains': {
-                'primary': {'domainname': service['fqdn'], 'ttl': 5}
+                'primary': {'domainname': service['fqdn'].lower(), 'ttl': 5}
             } if service.get('fqdn') else {},
         }
     return result
-
 
 def hcl(value, level=0):
     if isinstance(value, str):
