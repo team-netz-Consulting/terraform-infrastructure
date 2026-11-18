@@ -1,5 +1,8 @@
 # Services-Importer
 
+Für Windows und Linux steht auch ein [grafischer JSON-Editor](ServicesEditor/README.md)
+mit Service-Liste, Detailmasken und Prüfung gegen das Schema zur Verfügung.
+
 Python 3.9 oder neuer; keine zusätzlichen Pakete erforderlich. Eingaben werden
 anhand der Regeln des mitgelieferten `services.schema.json` geprüft.
 
