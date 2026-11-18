@@ -1,0 +1,40 @@
+{
+  "services": {
+    "service-3": {
+      "task": "add",
+      "fqdn": "service-3.example.org",
+      "environment": "e2p",
+      "stage": "prod",
+      "cs_vip_mz": "192.168.101.93",
+      "cs_vip_wi": "192.168.102.93",
+      "portgroups": {
+        "portgroup001": {
+          "ports": [10401, 10402, 10403, 10404],
+          "members": [
+            {
+              "server_name": "srv_service2_wi_01",
+              "server_ip": "10.1.1.31"
+            },
+            {
+              "server_name": "srv_service2_mz_01",
+              "server_ip": "10.1.2.44"
+            },
+            {
+              "server_name": "SRV_service2_mz_01",
+              "server_ip": "10.1.2.45"
+            }            
+          ]
+        },
+        "portgroup002": {
+          "ports": [10408],
+          "members": [
+            {
+              "server_name": "srv_service2_wi_02",
+              "server_ip": "10.1.1.30"
+            }
+          ]
+        }
+      }
+    }    
+  }
+}
