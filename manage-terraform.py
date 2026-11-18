@@ -7,6 +7,12 @@ gedacht und laeuft unter Linux und Windows (Python 3 vorausgesetzt).
 
 # Versionshistorie
 # -----------------------------------------------------------------------------
+# Version: 0.4.3
+# Build:   20261118-001
+# Changes:
+#   - Geklonte Projekte werden automatisch als aktive Umgebung gespeichert.
+#   - Lokale Management-Konfiguration aus Git entfernt; Beispielvorlage ergaenzt.
+#
 # Version: 0.4.2
 # Build:   20261020-002
 # Changes:
@@ -103,9 +109,11 @@ from typing import Dict, List, Optional, Tuple
 from urllib import error, parse, request
 
 
-SCRIPT_VERSION = "0.4.2"
-SCRIPT_BUILD = "20261020-002"
+SCRIPT_VERSION = "0.4.3"
+SCRIPT_BUILD = "20261118-001"
 SCRIPT_CHANGELOG = (
+    "Geklonte Projekte werden automatisch als aktive Umgebung gespeichert.",
+    "Lokale Management-Konfiguration aus Git entfernt; Beispielvorlage ergaenzt.",
     "Vorhandene manage-terraform.conf bleibt bei lokalen Updates erhalten.",
     "Fehlende Konfigurationsdatei wird aus der Updatequelle uebernommen.",
     "Getrennte GitLab-Wurzelgruppen fuer NetScaler und Alteon eingefuehrt.",
@@ -399,6 +407,7 @@ class TerraformManager:
         managed_paths = (
             "manage-terraform.py",
             "manage-terraform.conf",
+            "manage-terraform.conf.example",
             "manage-terraform.sh",
             "terraform-cli.sh",
             "README.md",
@@ -2750,7 +2759,10 @@ class TerraformManager:
             target_dir.parent.mkdir(parents=True, exist_ok=True)
             self.run_git(["clone", remote_url, str(target_dir)], auth=True)
             self.ensure_repo_branch(target_dir, self.get_selected_branch())
+            self.config["ACTIVE_ENVIRONMENT"] = environment_name
+            self.save_config()
             print(f"Projekt wurde geklont: {target_dir}")
+            print(f"Aktive Umgebung gesetzt: {environment_name}")
             print(f"Aktiver Branch in der geklonten Projekt: {self.get_current_branch_name(target_dir) or 'unbekannt'}")
         except Exception as exc:
             print("Klonen fehlgeschlagen.")

@@ -9,18 +9,30 @@ Das Projekt soll die Arbeit mit Terraform-Infrastruktur reproduzierbarer und lei
 - aktive Terraform-Umgebung auswaehlen
 - Zielbranch `develop` oder `master` festlegen
 - Umgebung aus einem Alteon- oder NetScaler-ADC-Template erstellen
-- Umgebung aus GitLab klonen
+- Umgebung aus GitLab klonen und automatisch als aktive Umgebung speichern
 - lokale und entfernte Aenderungen per Git verwalten
 - Terraform-Befehle wie `init`, `validate`, `plan` und `apply` ausfuehren
 
-Die lokale Struktur ist auf getrennte Branch-Verzeichnisse ausgelegt, zum Beispiel:
+Mit `ENVIRONMENT_FOLDER_STRUCTURE="master_develop"` (Standard) werden getrennte
+Branch-Verzeichnisse verwendet, zum Beispiel:
 
 ```text
 environments/
-└── voh/
-    ├── develop/
-    └── master/
+└── netscaler/
+    └── beispielprojekt/
+        └── adc-01/
+            └── gslb/
+                ├── develop/
+                └── master/
 ```
+
+Bei `ENVIRONMENT_FOLDER_STRUCTURE="single"` liegen die Terraform-Dateien direkt
+im Projektverzeichnis; der Branch wird innerhalb dieses Git-Repositories gewechselt.
+
+Alle Organisations-, Projekt-, Geräte- und Domainnamen in den folgenden Beispielen
+sind fiktiv und müssen an die eigene Umgebung angepasst werden. Für IP-Beispiele
+sind die Dokumentationsnetze `192.0.2.0/24`, `198.51.100.0/24` und
+`203.0.113.0/24` vorgesehen. Produkt- und Providernamen bleiben unverändert.
 
 ## Start
 
@@ -37,6 +49,21 @@ python3 manage-terraform.py
 ```
 
 Beim ersten Start wird bei Bedarf eine Konfigurationsdatei `manage-terraform.conf` angelegt.
+Alternativ kann `manage-terraform.conf.example` nach `manage-terraform.conf` kopiert
+und angepasst werden. Die lokale `manage-terraform.conf` ist von Git ausgeschlossen;
+versioniert wird nur die Beispielvorlage.
+Vor GitLab-Operationen die Gruppen- und Remote-URLs in dieser Datei anpassen.
+
+Eine alternative Konfiguration und die installierte Version lassen sich so aufrufen:
+
+```bash
+python3 manage-terraform.py --config /pfad/zur/manage-terraform.conf
+./manage-terraform.sh --version
+```
+
+Beide Einstiegsskripte unterstützen außerdem die Umgebungsvariable
+`TERRAFORM_MANAGER_CONFIG` für den Konfigurationspfad. Beim Python-Manager hat
+`--config` Vorrang.
 
 ## Voraussetzungen
 
@@ -54,6 +81,10 @@ Die wichtigsten Einstellungen liegen in `manage-terraform.conf`, unter anderem:
 - `TEMPLATE_DIR`: Stammordner der ADC-Vorlagen (`alteon`, `alteon-*`,
   `netscaler` und `netscaler-*`)
 - `ENVIRONMENTS_DIR`: Ablageort der Umgebungen
+- `ENVIRONMENT_FOLDER_STRUCTURE`: `master_develop` oder `single`
+- `MASTER_BRANCH` / `DEVELOP_BRANCH`: Branchnamen für die Git-Workflows
+- `GIT_REMOTE_NAME`: Name des Git-Remotes, standardmäßig `origin`
+- `GIT_ACCESS_TOKEN` oder `GIT_USERNAME` / `GIT_PASSWORD`: GitLab-Anmeldung
 - `UPDATE_CHECK_ENABLED`: lokale Updatepruefung beim Programmstart aktivieren
 - `UPDATE_SOURCE_DIR`: Quellordner einer neueren Programmversion
 - `GIT_GROUP_URL_NETSCALER`: Wurzelgruppe für alle NetScaler-Projekte
@@ -79,8 +110,21 @@ Template-Verzeichnis muss mindestens eine `.tf`-Datei enthalten. Das
 Alteon-Template verwendet `Radware/alteon`, das NetScaler-Template
 `citrix/citrixadc`. Fuer
 NetScaler muss `netscaler_endpoint` beispielsweise in einer `terraform.tfvars`
-oder als `TF_VAR_netscaler_endpoint` gesetzt werden. Passwoerter werden nicht in
-der Konfigurationsdatei gespeichert.
+oder als `TF_VAR_netscaler_endpoint` gesetzt werden. ADC-Passwörter werden bei aktivierter Linux-Environment-Abfrage
+zur Laufzeit abgefragt und als `TF_VAR_*` bereitgestellt. Die Konfiguration kann
+dagegen GitLab-Zugangsdaten (`GIT_ACCESS_TOKEN`, `GIT_PASSWORD`) enthalten; solche
+Werte nicht committen. Die GitLab-Anmeldung kann auch über das Menü für die
+laufende Sitzung gesetzt werden.
+
+Beispiel für anonymisierte Gruppen-URLs in `manage-terraform.conf`:
+
+```ini
+GIT_GROUP_URL_NETSCALER="https://gitlab.example.com/beispielgruppe/netscaler"
+GIT_GROUP_URL_ALTEON="https://gitlab.example.com/beispielgruppe/alteon"
+```
+
+Die Endpunkte in den Terraform-Templates vor dem Einsatz prüfen und anpassen;
+das Alteon-Standardtemplate enthält derzeit eine feste Geräte-IP in `provider.tf`.
 
 Neue Environment-Repositories erhalten automatisch einen initialen `master`-
 Branch und einen davon abgeleiteten `develop`-Branch. Beide Branches werden zum
@@ -90,8 +134,8 @@ GitLab-Projekte in vorhandenen Untergruppen werden rekursiv erkannt. Die Suche
 beginnt exakt bei `GIT_GROUP_URL_NETSCALER` beziehungsweise
 `GIT_GROUP_URL_ALTEON`; der Manager hängt keinen festen Gruppennamen an. Der
 Pfad relativ zur jeweiligen Wurzelgruppe wird lokal unter dem ADC-Typ
-gespiegelt. Ein Projekt `team-netz/netscalerADC/kunde/ns1/gslb` liegt daher
-beispielsweise unter `environments/netscaler/kunde/ns1/gslb`. Beim Erstellen einer Umgebung wird
+gespiegelt. Ein Projekt `beispielgruppe/netscaler/beispielprojekt/adc-01/gslb` liegt daher
+beispielsweise unter `environments/netscaler/beispielprojekt/adc-01/gslb`. Beim Erstellen einer Umgebung wird
 eine vorhandene Ziel-Subgroup passend zum gewählten ADC-Typ ausgewählt; das
 Werkzeug erstellt keine Subgroups.
 
@@ -101,7 +145,7 @@ Die folgenden Befehle bilden den Ablauf von `manage-terraform.py` manuell ab.
 Im Beispiel lautet das GitLab-Projekt:
 
 ```text
-https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb
+https://gitlab.example.com/beispielgruppe/netscaler/beispielprojekt/adc-01/gslb
 ```
 
 ### Neue lokale Umgebung mit einem leeren GitLab-Projekt verbinden
@@ -109,21 +153,21 @@ https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb
 Zuerst in das Verzeichnis wechseln, das die Terraform-Dateien enthält:
 
 ```bash
-cd environments/netscaler/kunde/ns1/gslb
+cd environments/netscaler/beispielprojekt/adc-01/gslb
 ```
 
 Bei der Struktur `master_develop` stattdessen in den gewünschten Branch-Ordner
 wechseln, beispielsweise:
 
 ```bash
-cd environments/netscaler/kunde/ns1/gslb/develop
+cd environments/netscaler/beispielprojekt/adc-01/gslb/develop
 ```
 
 Danach das Repository initialisieren und das GitLab-Remote eintragen:
 
 ```bash
 git init --initial-branch master
-git remote add origin https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git
+git remote add origin https://gitlab.example.com/beispielgruppe/netscaler/beispielprojekt/adc-01/gslb.git
 git remote -v
 ```
 
@@ -131,14 +175,14 @@ Falls `origin` bereits existiert, wird – wie im Python-Manager – seine URL
 aktualisiert:
 
 ```bash
-git remote set-url origin https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git
+git remote set-url origin https://gitlab.example.com/beispielgruppe/netscaler/beispielprojekt/adc-01/gslb.git
 ```
 
 Den initialen Stand committen und `master` veröffentlichen:
 
 ```bash
 git add .
-git commit -m "Initial Terraform environment netscaler/kunde/ns1/gslb"
+git commit -m "Initial Terraform environment netscaler/beispielprojekt/adc-01/gslb"
 git branch -M master
 git push -u origin master
 ```
@@ -159,9 +203,9 @@ ausgecheckt.
 Bei `ENVIRONMENT_FOLDER_STRUCTURE=single`:
 
 ```bash
-git clone https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git \
-  environments/netscaler/kunde/ns1/gslb
-cd environments/netscaler/kunde/ns1/gslb
+git clone https://gitlab.example.com/beispielgruppe/netscaler/beispielprojekt/adc-01/gslb.git \
+  environments/netscaler/beispielprojekt/adc-01/gslb
+cd environments/netscaler/beispielprojekt/adc-01/gslb
 git checkout develop
 ```
 
@@ -170,12 +214,12 @@ eigenes Verzeichnis geklont werden:
 
 ```bash
 git clone --branch develop \
-  https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git \
-  environments/netscaler/kunde/ns1/gslb/develop
+  https://gitlab.example.com/beispielgruppe/netscaler/beispielprojekt/adc-01/gslb.git \
+  environments/netscaler/beispielprojekt/adc-01/gslb/develop
 
 git clone --branch master \
-  https://gitlab.team-netz.net/team-netz/netscalerADC/kunde/ns1/gslb.git \
-  environments/netscaler/kunde/ns1/gslb/master
+  https://gitlab.example.com/beispielgruppe/netscaler/beispielprojekt/adc-01/gslb.git \
+  environments/netscaler/beispielprojekt/adc-01/gslb/master
 ```
 
 ### Täglicher Git-Ablauf
@@ -206,19 +250,21 @@ kann. Der Python-Manager verwendet ebenfalls `git push -u` ohne `-f`.
 Die Standardbranches stammen aus `MASTER_BRANCH` und `DEVELOP_BRANCH` in
 `manage-terraform.conf`. Soll stattdessen `main` verwendet werden, muss
 `MASTER_BRANCH="main"` konfiguriert und in den obigen Befehlen `master` durch
-`main` ersetzt werden.
+`main` ersetzt werden. Die Zielbranch-Auswahl im Manager, die CLI-Shell und die
+`apply`-Freigabe sind derzeit weiterhin auf `develop` beziehungsweise `master`
+festgelegt. Für den vollständigen Menüablauf die Standardbranchnamen verwenden.
 
 ## Direkte CLI-Shell
 
 Das Skript `terraform-cli.sh` öffnet eine interaktive Shell im aktiven
-Environment. Es liest `manage-terraform.conf`, erkennt den Terraform-Provider
+Environment. Dafür werden Bash und Python 3 benötigt. Es liest `manage-terraform.conf`, erkennt den Terraform-Provider
 und setzt die dazugehörigen Alteon- oder NetScaler-Zugangsdaten. Außerdem wird
 die konfigurierte GitLab-Anmeldung über ein temporäres Askpass-Skript für
 Git-Kommandos bereitgestellt:
 
 ```bash
 ./terraform-cli.sh
-./terraform-cli.sh netscaler/kunde/ns1/gslb develop
+./terraform-cli.sh netscaler/beispielprojekt/adc-01/gslb develop
 ```
 
 Die erste Variante verwendet `ACTIVE_ENVIRONMENT` und
@@ -228,6 +274,11 @@ geöffneten Subshell und das temporäre Askpass-Skript wird beim Verlassen
 entfernt.
 
 ## Terraform-Hinweis
+
+Das Terraform-Menü bietet `init`, `fmt -check`, `validate`, `plan` und eine Shell
+mit den Terraform-Umgebungsvariablen. `apply` ist dort nur mit dem Zielbranch
+`master` und nach ausdrücklicher Bestätigung verfügbar. Direkte Terraform-Aufrufe
+in einer Shell unterliegen dieser Menübeschränkung nicht.
 
 Terraform State sollte nicht direkt in diesem Repository verwaltet werden. Fuer produktive Nutzung wird ein Remote Backend mit Locking und Versionierung empfohlen. Weitere Hinweise stehen in `HowTo-Terraform.md`.
 
