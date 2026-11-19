@@ -9,18 +9,91 @@ namespace ServicesEditor;
 public sealed class ServiceDocument
 {
     private static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
-    private readonly JsonSchema schema;
+    public string SchemaPath { get; private set; }
+    public const string Version = "1.1.2";
     private byte[]? originalHash;
     public JsonObject Root { get; private set; } = new() { ["services"] = new JsonObject() };
     public JsonObject Services => (JsonObject)Root["services"]!;
     public string? FilePath { get; private set; }
     public bool Dirty { get; private set; }
 
-    public ServiceDocument()
+    public ServiceDocument(string? schemaPath = null)
     {
-        using var stream = typeof(ServiceDocument).Assembly.GetManifestResourceStream("services.schema.json")!;
-        using var reader = new StreamReader(stream);
-        schema = JsonSchema.FromText(reader.ReadToEnd());
+        SchemaPath = Path.GetFullPath(schemaPath ?? Path.Combine(AppContext.BaseDirectory, "services.schema.json"));
+    }
+
+    public void SetSchema(string path)
+    {
+        // Keep the current selection if the replacement schema cannot be read.
+        ReadSchema(Path.GetFullPath(path));
+        SchemaPath = Path.GetFullPath(path);
+    }
+
+    private static (JsonSchema Schema, JsonObject Definition) ReadSchema(string path)
+    {
+        try
+        {
+            string text = File.ReadAllText(path);
+            var definition = ParseUnique(text) as JsonObject
+                ?? throw new InvalidDataException("Das Schema muss ein JSON-Objekt sein.");
+            var meta = MetaSchemas.Draft202012.Evaluate(definition);
+            if (!meta.IsValid) throw new InvalidDataException("Das Schema entspricht nicht JSON Schema Draft 2020-12.");
+            return (JsonSchema.FromText(text), definition);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            throw new InvalidDataException($"Schema konnte nicht geladen werden: {path}\n{ex.Message}", ex);
+        }
+    }
+
+    public JsonObject Describe(string scope)
+    {
+        var root = ReadSchema(SchemaPath).Definition;
+        JsonNode? node = root;
+        string[] path = scope switch
+        {
+            "services" => ["properties", "services"],
+            "groups" => ["properties", "services", "additionalProperties", "properties", "portgroups"],
+            "service" => ["properties", "services", "additionalProperties"],
+            "group" => ["properties", "services", "additionalProperties", "properties", "portgroups", "additionalProperties"],
+            "member" => ["properties", "services", "additionalProperties", "properties", "portgroups", "additionalProperties", "properties", "members", "items"],
+            _ => []
+        };
+        JsonNode? Resolve(JsonNode? value)
+        {
+            var seen = new HashSet<string>();
+            while (value is JsonObject obj && obj["$ref"] is JsonValue reference && reference.TryGetValue<string>(out var pointer))
+            {
+                if (!pointer.StartsWith("#/", StringComparison.Ordinal) || !seen.Add(pointer)) return value;
+                value = root;
+                foreach (var part in pointer[2..].Split('/'))
+                    value = (value as JsonObject)?[part.Replace("~1", "/").Replace("~0", "~")];
+            }
+            return value;
+        }
+        foreach (var part in path) node = (Resolve(node) as JsonObject)?[part];
+        var result = Resolve(node) as JsonObject;
+        if (result is null) return new JsonObject();
+        var copy = (JsonObject)result.DeepClone();
+        if (copy["properties"] is JsonObject properties)
+            foreach (var (key, value) in properties.ToArray()) properties[key] = Resolve(value)?.DeepClone();
+        return copy;
+    }
+
+    public static JsonNode? ParseUnique(string text)
+    {
+        using var parsed = JsonDocument.Parse(text);
+        CheckDuplicateKeys(parsed.RootElement, "$");
+        return JsonNode.Parse(text);
+    }
+
+    public void ReplaceJson(string text)
+    {
+        var root = ParseUnique(text) as JsonObject
+            ?? throw new InvalidDataException("Die JSON-Wurzel muss ein Objekt sein.");
+        CheckStructure(root);
+        Root = root;
+        Changed();
     }
 
     public void Changed() => Dirty = true;
@@ -29,19 +102,22 @@ public sealed class ServiceDocument
     public void Load(string path)
     {
         byte[] bytes = File.ReadAllBytes(path);
-        using var parsed = JsonDocument.Parse(bytes);
-        CheckDuplicateKeys(parsed.RootElement, "$");
-        var root = JsonNode.Parse(bytes) as JsonObject
+        var root = ParseUnique(Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF')) as JsonObject
             ?? throw new InvalidDataException("Die JSON-Wurzel muss ein Objekt sein.");
-        // Refuse structures the form cannot represent; never silently discard data.
+        CheckStructure(root);
+        Root = root;
+        FilePath = Path.GetFullPath(path);
+        originalHash = SHA256.HashData(bytes);
+        Dirty = false;
+    }
+
+    private static void CheckStructure(JsonObject root)
+    {
         if (root["services"] is not JsonObject services)
             throw new InvalidDataException("'services' muss ein Objekt sein.");
         foreach (var (name, value) in services)
         {
             if (value is not JsonObject service) throw new InvalidDataException($"Service {name}: Objekt erwartet.");
-            foreach (var field in new[] { "task", "servicetype", "fqdn", "environment", "stage", "cs_vip_mz", "cs_vip_wi" })
-                if (service[field] is JsonNode fieldValue && (fieldValue is not JsonValue v || !v.TryGetValue<string>(out _)))
-                    throw new InvalidDataException($"Service {name}: {field} muss Text sein.");
             if (service["portgroups"] is null) continue;
             if (service["portgroups"] is not JsonObject groups) throw new InvalidDataException($"Service {name}: portgroups muss ein Objekt sein.");
             foreach (var (groupName, groupValue) in groups)
@@ -54,16 +130,9 @@ public sealed class ServiceDocument
                 foreach (var member in members)
                 {
                     if (member is not JsonObject m) throw new InvalidDataException($"{name}/{groupName}: Server muss ein Objekt sein.");
-                    foreach (var field in new[] { "server_name", "server_ip" })
-                        if (m[field] is JsonNode fv && (fv is not JsonValue v || !v.TryGetValue<string>(out _)))
-                            throw new InvalidDataException($"{name}/{groupName}: {field} muss Text sein.");
                 }
             }
         }
-        Root = root;
-        FilePath = Path.GetFullPath(path);
-        originalHash = SHA256.HashData(bytes);
-        Dirty = false;
     }
 
     private static void CheckDuplicateKeys(JsonElement element, string path)
@@ -86,6 +155,7 @@ public sealed class ServiceDocument
 
     public IReadOnlyList<string> Validate()
     {
+        var schema = ReadSchema(SchemaPath).Schema;
         var result = schema.Evaluate(Root, new EvaluationOptions
         {
             OutputFormat = OutputFormat.Hierarchical,
@@ -105,11 +175,27 @@ public sealed class ServiceDocument
             foreach (var child in result.Details) Collect(child, errors);
     }
 
+    public void CheckName(string scope, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) throw new InvalidDataException("Der Name darf nicht leer sein.");
+        var definition = Describe(scope);
+        if (definition["propertyNames"] is JsonNode nameRules)
+        {
+            var rule = nameRules.DeepClone();
+            if (rule is JsonObject obj)
+            {
+                var root = ReadSchema(SchemaPath).Definition;
+                if (root["$defs"] is JsonNode defs) obj["$defs"] = defs.DeepClone();
+            }
+            if (!JsonSchema.FromText(rule.ToJsonString()).Evaluate(JsonValue.Create(name)).IsValid)
+                throw new InvalidDataException("Der Name entspricht nicht den propertyNames-Regeln des aktuellen Schemas.");
+        }
+    }
+
     public void Rename(string oldName, string newName)
     {
         if (oldName == newName) return;
-        if (!System.Text.RegularExpressions.Regex.IsMatch(newName, "^[A-Za-z][A-Za-z0-9_-]*$"))
-            throw new InvalidDataException("Name: mit Buchstabe beginnen; nur Buchstaben, Ziffern, _ und - verwenden.");
+        CheckName("services", newName);
         if (Services.ContainsKey(newName)) throw new InvalidDataException("Dieser Service-Name ist bereits vorhanden.");
         var value = Services[oldName] ?? throw new InvalidDataException("Service nicht gefunden.");
         Services.Remove(oldName);
@@ -122,6 +208,8 @@ public sealed class ServiceDocument
         var errors = Validate();
         if (errors.Count != 0) throw new InvalidDataException("Speichern abgelehnt: Schemafehler vorhanden.\n" + string.Join("\n", errors));
         path = Path.GetFullPath(path);
+        if (string.Equals(path, SchemaPath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new IOException("Die Schema-Datei darf nicht mit Servicedaten überschrieben werden.");
         if (string.Equals(path, FilePath, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) && originalHash is not null &&
             (!File.Exists(path) || !SHA256.HashData(File.ReadAllBytes(path)).SequenceEqual(originalHash)))
             throw new IOException("Die Datei wurde außerhalb des Editors geändert oder gelöscht. Bitte unter anderem Namen speichern oder neu öffnen.");

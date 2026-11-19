@@ -9,6 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="../ServicesEditor/ServicesEditor.csproj" />
     <PackageReference Include="Avalonia.Headless" Version="12.1.6" />
+    <Content Include="../services.schema.json" Link="services.schema.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../services.example.json" Link="services.example.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -12,7 +12,7 @@ for target in "${targets[@]}"; do
         -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
         -p:DebugType=None -p:DebugSymbols=false
     cp "$editor_dir/README.md" "$output_dir/README.md"
-    python3 - "$output_dir" "$editor_dir/dist/services-editor-1.0.0-$target.zip" <<'PY'
+    python3 - "$output_dir" "$editor_dir/dist/services-editor-1.1.2-$target.zip" <<'PY'
 import hashlib
 import pathlib
 import sys
